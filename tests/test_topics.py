@@ -1,0 +1,171 @@
+"""후보 풀 규칙 검사.
+
+이 검사기가 지키는 것은 코드 품질이 아니라 모임의 형식이다. 후보에 결론이
+들어가기 시작하면 세션은 토론이 아니라 발표가 되고, 그 변화는 한 번에
+일어나지 않고 한 항목씩 스며든다. 그래서 사람이 아니라 코드가 막는다.
+"""
+
+import unittest
+
+from core import topics
+
+
+def valid_topic(**overrides) -> dict:
+    base = {
+        "id": "T-999",
+        "axis": 1,
+        "judgment": "국면",
+        "title": "예시",
+        "question": "지금 무엇이 달라졌나",
+        "why_now": [{"text": "국고 10년 4.3%", "source": "KRX bond_kts"}],
+        "splits": ["이렇게 볼 수 있다", "저렇게 볼 수도 있다"],
+        "data": {"ready": "full", "series": [{"source": "krx", "dataset": "bond_kts"}]},
+        "output": "내 기준을 한 문장으로",
+        "prep": 3,
+        "origin": "지표 스캔",
+        "status": "candidate",
+    }
+    base.update(overrides)
+    return base
+
+
+def issues_for(topic: dict) -> list[str]:
+    backlog = topics.Backlog(topics=[topic])
+    return [i.message for i in topics.validate(backlog)
+            if i.topic == topic.get("id", "?")]
+
+
+class TestConclusionRejected(unittest.TestCase):
+    """가장 중요한 검사. 후보 단계에서 답을 적으면 안 된다."""
+
+    def test_english_conclusion_fields(self):
+        for f in ("conclusion", "tldr", "verdict", "recommendation", "takeaway"):
+            with self.subTest(field=f):
+                found = issues_for(valid_topic(**{f: "금리가 이긴다"}))
+                self.assertTrue(any("결론 필드" in m for m in found), f)
+
+    def test_korean_conclusion_fields(self):
+        for f in ("결론", "요약", "전망"):
+            with self.subTest(field=f):
+                found = issues_for(valid_topic(**{f: "하락 전환"}))
+                self.assertTrue(any("결론 필드" in m for m in found), f)
+
+    def test_clean_topic_has_no_issues(self):
+        self.assertEqual(issues_for(valid_topic()), [])
+
+
+class TestSplits(unittest.TestCase):
+    def test_single_split_rejected(self):
+        found = issues_for(valid_topic(splits=["금리가 이긴다"]))
+        self.assertTrue(any("splits" in m for m in found))
+
+    def test_personal_axis_may_have_one_split(self):
+        found = issues_for(valid_topic(
+            axis=4, judgment="리스크", splits=["개인별로 갈린다"],
+            data={"ready": "external", "note": "운영자는 벤치마크만 준비"},
+        ))
+        self.assertEqual(found, [])
+
+    def test_personal_axis_must_say_what_operator_prepares(self):
+        found = issues_for(valid_topic(
+            axis=4, judgment="리스크", splits=["개인별로 갈린다"],
+            data={"ready": "external"},
+        ))
+        self.assertTrue(any("운영자" in m for m in found))
+
+
+class TestWhyNow(unittest.TestCase):
+    def test_bare_string_has_no_source(self):
+        found = issues_for(valid_topic(why_now=["금리가 올랐다"]))
+        self.assertTrue(any("출처" in m for m in found))
+
+    def test_dict_without_source_rejected(self):
+        found = issues_for(valid_topic(why_now=[{"text": "금리가 올랐다"}]))
+        self.assertTrue(any("source" in m for m in found))
+
+
+class TestDataReadiness(unittest.TestCase):
+    def test_full_requires_series(self):
+        found = issues_for(valid_topic(data={"ready": "full"}))
+        self.assertTrue(any("series" in m for m in found))
+
+    def test_partial_must_state_what_is_missing(self):
+        found = issues_for(valid_topic(data={
+            "ready": "partial", "series": [{"source": "krx"}]}))
+        self.assertTrue(any("missing" in m for m in found))
+
+    def test_partial_with_missing_is_fine(self):
+        found = issues_for(valid_topic(data={
+            "ready": "partial", "series": [{"source": "krx"}],
+            "missing": "기재부 발행계획"}))
+        self.assertEqual(found, [])
+
+    def test_unknown_readiness_rejected(self):
+        found = issues_for(valid_topic(data={"ready": "maybe"}))
+        self.assertTrue(any("data.ready" in m for m in found))
+
+
+class TestQuestionForm(unittest.TestCase):
+    def test_statement_rejected(self):
+        found = issues_for(valid_topic(question="금리가 올라서 주가가 빠졌다."))
+        self.assertTrue(any("질문 형태" in m for m in found))
+
+    def test_period_after_interrogative_is_fine(self):
+        self.assertEqual(issues_for(valid_topic(question="지금 무엇이 달라졌나.")), [])
+
+    def test_question_mark_is_fine(self):
+        self.assertEqual(issues_for(valid_topic(question="지금 무엇이 달라졌나?")), [])
+
+
+class TestFieldConstraints(unittest.TestCase):
+    def test_axis_out_of_range(self):
+        self.assertTrue(any("axis" in m for m in issues_for(valid_topic(axis=7))))
+
+    def test_unknown_judgment(self):
+        found = issues_for(valid_topic(judgment="느낌"))
+        self.assertTrue(any("judgment" in m for m in found))
+
+    def test_missing_required_field(self):
+        t = valid_topic()
+        del t["output"]
+        self.assertTrue(any("output" in m for m in issues_for(t)))
+
+    def test_duplicate_ids(self):
+        backlog = topics.Backlog(topics=[valid_topic(), valid_topic()])
+        self.assertTrue(any("중복" in i.message for i in topics.validate(backlog)))
+
+
+class TestPoolCoverage(unittest.TestCase):
+    """한 축만 채워두면 아무리 잘 골라도 결국 그 축만 나온다."""
+
+    def test_missing_axes_reported(self):
+        backlog = topics.Backlog(topics=[valid_topic()])
+        missing = [i.message for i in topics.validate(backlog) if i.topic == "풀 전체"]
+        self.assertEqual(len(missing), 5)
+
+    def test_dropped_topics_do_not_count_as_coverage(self):
+        backlog = topics.Backlog(topics=[
+            valid_topic(id="T-1"),
+            valid_topic(id="T-2", axis=4, judgment="리스크", status="dropped"),
+        ])
+        self.assertEqual(topics.coverage(backlog)[4], 0)
+
+
+class TestRealBacklog(unittest.TestCase):
+    """저장소에 실제로 들어 있는 후보 풀이 규칙을 지키는지."""
+
+    def test_backlog_is_clean(self):
+        backlog = topics.load()
+        found = topics.validate(backlog)
+        self.assertEqual(found, [], "\n".join(f"{i.topic}: {i.message}" for i in found))
+
+    def test_every_axis_has_a_candidate(self):
+        for axis, n in topics.coverage(topics.load()).items():
+            self.assertGreater(n, 0, f"{axis}축 후보 없음")
+
+    def test_lookup_is_case_insensitive(self):
+        self.assertIsNotNone(topics.load().get("t-001"))
+
+
+if __name__ == "__main__":
+    unittest.main()

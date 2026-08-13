@@ -17,7 +17,7 @@ import json
 import os
 import sys
 
-from core import cache, config, sources, transform
+from core import cache, config, sources, topics, transform
 from core.http import FetchError
 from core.series import Series
 
@@ -222,6 +222,90 @@ def cmd_ecos_series(args) -> int:
     return 0
 
 
+READY_MARK = {"full": "완비", "partial": "보강", "external": "외부"}
+
+
+def cmd_topics_list(args) -> int:
+    backlog = topics.load()
+    rows = backlog.select(axis=args.axis, ready=args.ready, status=args.status,
+                          books=True if args.books else (False if args.no_books else None))
+    if not rows:
+        print("해당하는 후보가 없습니다.")
+        return 0
+
+    for t in rows:
+        axis = t.get("axis")
+        ready = (t.get("data") or {}).get("ready", "-")
+        tag = READY_MARK.get(ready, ready if t.get("data") else "독서")
+        print(f"  {t['id']:<6} {axis}축 {topics.AXES.get(axis, ''):<14} "
+              f"[{tag:<2}] {t['title']}")
+
+    print(f"\n{len(rows)}건")
+    if args.axis is None and not args.books:
+        cov = topics.coverage(backlog)
+        bar = "  ".join(f"{a}축 {n}" for a, n in cov.items())
+        print(f"축별 후보: {bar}   독서 {len(backlog.books)}")
+    return 0
+
+
+def cmd_topics_show(args) -> int:
+    t = topics.load().get(args.topic_id)
+    if not t:
+        print(f"{args.topic_id} 를 찾을 수 없습니다.")
+        return 1
+
+    axis = t.get("axis")
+    print(f"\n{t['id']}  {t['title']}")
+    print(f"{axis}축 {topics.AXES.get(axis, '')}"
+          + (f" · {t['judgment']} 판단" if t.get("judgment") else ""))
+    print(f"\n  질문\n    {' '.join(str(t['question']).split())}")
+
+    if t.get("why_now"):
+        print("\n  지금인 이유")
+        for w in t["why_now"]:
+            if isinstance(w, dict):
+                print(f"    - {w['text']}\n        출처 {w['source']}")
+            else:
+                print(f"    - {w}")
+
+    if t.get("splits"):
+        print("\n  갈리는 지점")
+        for s in t["splits"]:
+            print(f"    - {s}")
+
+    data = t.get("data") or {}
+    if data:
+        print(f"\n  데이터  {READY_MARK.get(data.get('ready'), data.get('ready'))}")
+        for s in data.get("series") or []:
+            bits = " ".join(f"{k}={v}" for k, v in s.items() if k != "note")
+            print(f"    - {bits}")
+            if s.get("note"):
+                print(f"        {s['note']}")
+        for k in ("missing", "caveat", "note"):
+            if data.get(k):
+                print(f"    {k}: {data[k]}")
+
+    print(f"\n  참가자 산출물\n    {t.get('output', '-')}")
+    print(f"\n  준비 {t.get('prep', '?')}시간 · 유입 {t.get('origin', '-')} "
+          f"· 상태 {t.get('status')}")
+    if t.get("links"):
+        print(f"  연결: {', '.join(t['links'])}")
+    print()
+    return 0
+
+
+def cmd_topics_validate(_args) -> int:
+    backlog = topics.load()
+    issues = topics.validate(backlog)
+    if not issues:
+        print(f"후보 {len(backlog.topics)}건 + 독서 {len(backlog.books)}건, 규칙 위반 없음.")
+        return 0
+    print(f"{len(issues)}건의 문제:\n")
+    for i in issues:
+        print(f"  {i.topic:<8} {i.message}")
+    return 1
+
+
 def cmd_cache(_args) -> int:
     if not config.CACHE_DIR.exists():
         print("캐시가 비어 있습니다.")
@@ -336,6 +420,24 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--save", action="store_true")
     sp.add_argument("--refresh", action="store_true")
     sp.set_defaults(func=cmd_ecos_series)
+
+    tp = sub.add_parser("topics", help="주제 후보 풀 — 규칙은 docs/TOPICS.md")
+    tsub = tp.add_subparsers(dest="topics_command", required=True)
+
+    sp = tsub.add_parser("list", help="후보 목록")
+    sp.add_argument("--axis", type=int, choices=[1, 2, 3, 4, 5, 6])
+    sp.add_argument("--ready", choices=["full", "partial", "external"])
+    sp.add_argument("--status", choices=["candidate", "selected", "done", "dropped"])
+    sp.add_argument("--books", action="store_true", help="독서 트랙만")
+    sp.add_argument("--no-books", action="store_true", help="독서 제외")
+    sp.set_defaults(func=cmd_topics_list)
+
+    sp = tsub.add_parser("show", help="후보 상세")
+    sp.add_argument("topic_id")
+    sp.set_defaults(func=cmd_topics_show)
+
+    sp = tsub.add_parser("validate", help="형식 계약 검사")
+    sp.set_defaults(func=cmd_topics_validate)
 
     sp = sub.add_parser("cache", help="캐시 현황")
     sp.set_defaults(func=cmd_cache)

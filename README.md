@@ -6,15 +6,17 @@
 자료를 더 빨리 만드는 것보다, 참가자가 자기 기준을 세우고 남기게 만드는 것이 목표다.
 
 설계 원칙은 [`docs/LAYERS.md`](docs/LAYERS.md)에 있다. 코드를 고치기 전에 읽는다.
+주제를 고르는 규칙은 [`docs/TOPICS.md`](docs/TOPICS.md)에 있다.
 
 ## 현재 상태
 
-Step 1 (데이터 레이어)까지 구현됨.
+Step 1 (데이터 레이어)와 주제 후보 풀까지 구현됨.
 
 | Step | 내용 | 상태 |
 |---|---|---|
 | 0 | study-pack — 포맷 계약, 산출물 5종 | 완료 (별도 Cursor 스킬) |
 | **1** | **`core/sources` + `transform` + 캐시** | **완료** |
+| **1.5** | **주제 후보 풀 + 선정 규칙 + 검사기** | **완료** |
 | 2 | `session.yaml` → pack.json 자동 생성 | 예정 |
 | 3 | Verifier (숫자 대조) | 예정 |
 | 4 | Builder / Skeptic 병렬 | 예정 |
@@ -63,12 +65,38 @@ python3 cli.py financials 005930 --year 2025 --report annual
 python3 cli.py transform krx krx_close_005930 yoy --save
 python3 cli.py transform krx krx_close_005930 annualized --kwargs '{"months": 3}'
 
+# 주제 후보
+python3 cli.py topics list
+python3 cli.py topics list --axis 4 --ready full
+python3 cli.py topics show T-002
+python3 cli.py topics validate
+
 # 캐시 현황
 python3 cli.py cache
 ```
 
 `--refresh`는 캐시를 무시하고 재요청한다. `--save`는 `series/`에 CSV와
 출처 사이드카(`.meta.json`)를 남긴다.
+
+## 주제 후보 풀
+
+`topics/backlog.yaml`이 후보 풀, `docs/TOPICS.md`가 규칙이다. 6축 전체에
+후보를 깔아두는 이유는 단순하다. **좋은 주제만 고르면 자연히 거시로 쏠린다.**
+축을 먼저 정하고 그 안에서 고르는 순서가 아니면 항상 1축이 이긴다.
+
+`topics validate`가 검사하는 것은 코드 품질이 아니라 모임의 형식이다.
+
+- 후보에 결론 필드(`conclusion`, `결론`, `전망` …)가 있으면 거부한다.
+  후보 단계에서 답을 적으면 세션은 토론이 아니라 발표가 된다
+- `splits`가 2개 미만이면 거부한다. 찬반이 안 갈리면 토론할 게 없다
+- `why_now`의 모든 항목에 출처를 요구한다. 없으면 그냥 인상이다
+- `data.ready: partial`이면 무엇이 부족한지 적게 한다
+- 개인 축(4·5·6)이라도 운영자 준비물을 적게 한다. "각자 알아서"로 두면
+  빈손으로 나가게 된다
+- 6축 중 후보가 없는 축을 보고한다
+
+실제로 이 검사기가 초안에서 두 건을 잡았다. 질문 뒤에 서술문이 붙은 후보와,
+부족한 데이터를 안 적은 후보였다.
 
 ## 데이터 소스
 
@@ -161,8 +189,8 @@ python3 cli.py ecos series 722Y001 --items 0101000 --cycle M --start 202401 --en
 python3 -m unittest discover -s tests -t .
 ```
 
-42개. 네트워크가 필요 없다. 대부분은 실제로 한 번 물렸던 곳을 고정한 것이다 —
-월말 인덱스 시프트, 중복 날짜, 자격증명 유출.
+66개. 네트워크가 필요 없다. 대부분은 실제로 한 번 물렸던 곳을 고정한 것이다 —
+월말 인덱스 시프트, 중복 날짜, 자격증명 유출, 후보 풀의 결론 유입.
 
 이 테스트들은 장식이 아니라 실제로 두 개의 조용한 오류를 잡았다.
 
