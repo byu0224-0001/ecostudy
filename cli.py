@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
 import sys
@@ -296,14 +297,91 @@ def cmd_topics_show(args) -> int:
 
 def cmd_topics_validate(_args) -> int:
     backlog = topics.load()
-    issues = topics.validate(backlog)
+    inbox = topics.load_inbox()
+    issues = topics.validate(backlog) + topics.validate_inbox(inbox)
     if not issues:
-        print(f"후보 {len(backlog.topics)}건 + 독서 {len(backlog.books)}건, 규칙 위반 없음.")
+        print(f"후보 {len(backlog.topics)}건 + 독서 {len(backlog.books)}건 "
+              f"+ 포착 {len(inbox.items)}건, 규칙 위반 없음.")
         return 0
     print(f"{len(issues)}건의 문제:\n")
     for i in issues:
         print(f"  {i.topic:<8} {i.message}")
     return 1
+
+
+CHECK_LABEL = {
+    "matches": "일치 — 확인하는 자리가 된다. 한 단계 더 파야 산다",
+    "contradicts": "어긋남 — 가장 좋은 주제다",
+    "unverifiable": "확인 불가 — 탈락",
+}
+
+
+def cmd_topics_capture(args) -> int:
+    inbox = topics.load_inbox()
+    item = {
+        "id": inbox.next_id(),
+        "headline": args.headline,
+        "claim": args.claim,
+        "source": args.source,
+        "seen": args.seen or _dt.date.today().isoformat(),
+        "origin": args.origin,
+        "verify": args.verify,
+        "check": None,
+        "status": "raw",
+    }
+    if args.by:
+        item["by"] = args.by
+
+    inbox.items.append(item)
+    path = topics.save_inbox(inbox)
+
+    print(f"{item['id']} 포착됨 → {path.relative_to(config.ROOT)}")
+    print(f"  주장   {item['claim']}")
+    print(f"  확인   {item['verify']}")
+    if not args.verify:
+        print("\n  verify 가 비었습니다. 데이터로 확인할 방법이 없으면 주제가 아닙니다.")
+    print("\n  다음: 지표로 대조한 뒤  cli.py topics check "
+          f"{item['id']} --result contradicts")
+    return 0
+
+
+def cmd_topics_check(args) -> int:
+    inbox = topics.load_inbox()
+    item = inbox.get(args.item_id)
+    if not item:
+        print(f"{args.item_id} 를 찾을 수 없습니다.")
+        return 1
+
+    item["check"] = args.result
+    item["check_note"] = args.note
+    if args.result == "unverifiable":
+        item["status"] = "dropped"
+    topics.save_inbox(inbox)
+
+    print(f"{item['id']}  {item['headline']}")
+    print(f"  주장   {item['claim']}")
+    print(f"  판정   {CHECK_LABEL[args.result]}")
+    if args.note:
+        print(f"  근거   {args.note}")
+    if args.result == "contradicts":
+        print(f"\n  승격하려면 topics/backlog.yaml 에 축·질문·splits·데이터·산출물을 채운다.")
+    return 0
+
+
+def cmd_topics_inbox(args) -> int:
+    inbox = topics.load_inbox()
+    items = inbox.pending() if args.pending else inbox.items
+    if not items:
+        print("포착함이 비어 있습니다.  cli.py topics capture --help")
+        return 0
+    for i in items:
+        mark = {"matches": "일치", "contradicts": "어긋남",
+                "unverifiable": "확인불가"}.get(i.get("check"), "미대조")
+        who = f" ({i['by']})" if i.get("by") else ""
+        print(f"  {i['id']:<6} [{mark:<4}] {i['headline']}{who}")
+        print(f"          주장  {i['claim']}")
+    print(f"\n{len(items)}건 · 미대조 {len(inbox.pending())}건")
+    return 0
 
 
 def cmd_cache(_args) -> int:
@@ -438,6 +516,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = tsub.add_parser("validate", help="형식 계약 검사")
     sp.set_defaults(func=cmd_topics_validate)
+
+    sp = tsub.add_parser("capture", help="뉴스·제안을 포착함에 던져 넣는다")
+    sp.add_argument("--headline", required=True, help="본 것의 제목")
+    sp.add_argument("--claim", required=True,
+                    help="그것이 하는 검증 가능한 주장 하나. 분위기 말고 주장")
+    sp.add_argument("--source", required=True, help="어디서 봤나")
+    sp.add_argument("--verify", help="무엇으로 확인할 수 있나. 없으면 주제가 아니다")
+    sp.add_argument("--origin", default="뉴스", help="뉴스 / 참가자 제안 / 워크시트")
+    sp.add_argument("--by", help="참가자 제안이면 누가")
+    sp.add_argument("--seen", help="본 날짜 (기본: 오늘)")
+    sp.set_defaults(func=cmd_topics_capture)
+
+    sp = tsub.add_parser("check", help="포착한 주장을 지표와 대조한 결과 기록")
+    sp.add_argument("item_id")
+    sp.add_argument("--result", required=True,
+                    choices=["matches", "contradicts", "unverifiable"])
+    sp.add_argument("--note", help="대조 근거 — 어떤 데이터가 무엇을 말했나")
+    sp.set_defaults(func=cmd_topics_check)
+
+    sp = tsub.add_parser("inbox", help="포착함 목록")
+    sp.add_argument("--pending", action="store_true", help="아직 대조 안 한 것만")
+    sp.set_defaults(func=cmd_topics_inbox)
 
     sp = sub.add_parser("cache", help="캐시 현황")
     sp.set_defaults(func=cmd_cache)

@@ -1,0 +1,26 @@
+# 포착함 — 읽다가 걸린 것을 그 자리에서 던져 넣는 곳.
+#
+# 여기 적는 것은 기사 요약이 아니라 기사가 하는 '검증 가능한 주장' 하나다.
+# verify 를 채울 수 없으면 그 자리에서 버린다. 규칙은 docs/TOPICS.md.
+
+captured:
+- id: N-001
+  headline: 장기금리 급등, 재정 적자 우려 확산
+  claim: 국고 30년 금리 상승의 주된 원인은 국채 발행 증가다
+  source: 예시 기사 2026-08-11
+  seen: '2026-08-13'
+  origin: 뉴스
+  verify: krx bond_kts 커브 변화, 기재부 발행계획
+  check: contradicts
+  status: raw
+  check_note: 커브가 평행이동이 아니라 뒤쪽만 들렸다(30Y +197bp vs 2Y +125bp). 발행 증가만으로는 만기별 차이를 설명 못 한다
+- id: N-002
+  headline: 금리 올라도 주식이 오르는 이유가 궁금해요
+  claim: 금리 상승기에는 주가가 눌리는 것이 정상이다
+  source: 카톡 스터디방
+  seen: '2026-08-13'
+  origin: 참가자 제안
+  verify: krx index_kospi 와 bond_kts 를 같은 기간에 겹쳐 본다
+  check: null
+  status: raw
+  by: OO님

@@ -151,6 +151,95 @@ class TestPoolCoverage(unittest.TestCase):
         self.assertEqual(topics.coverage(backlog)[4], 0)
 
 
+def captured(**overrides) -> dict:
+    base = {
+        "id": "N-999",
+        "headline": "장기금리 급등, 재정 우려",
+        "claim": "30년 금리 상승의 주된 원인은 국채 발행 증가다",
+        "source": "예시 기사",
+        "seen": "2026-08-13",
+        "origin": "뉴스",
+        "verify": "krx bond_kts 커브",
+        "check": None,
+        "status": "raw",
+    }
+    base.update(overrides)
+    return base
+
+
+def inbox_issues(item: dict) -> list[str]:
+    return [i.message for i in topics.validate_inbox(topics.Inbox(items=[item]))]
+
+
+class TestCapture(unittest.TestCase):
+    """포착 단계에서 거르는 것이 가장 싸다."""
+
+    def test_clean_capture_passes(self):
+        self.assertEqual(inbox_issues(captured()), [])
+
+    def test_unfalsifiable_claim_is_rejected_at_intake(self):
+        # verify 를 못 채우는 주장은 탈락 조건 2에 이미 걸려 있다
+        found = inbox_issues(captured(verify=None))
+        self.assertTrue(any("verify" in m for m in found))
+
+    def test_claim_is_required_not_just_headline(self):
+        found = inbox_issues(captured(claim=None))
+        self.assertTrue(any("claim" in m for m in found))
+
+    def test_source_is_required(self):
+        found = inbox_issues(captured(source=None))
+        self.assertTrue(any("source" in m for m in found))
+
+    def test_unknown_check_result(self):
+        found = inbox_issues(captured(check="아마도"))
+        self.assertTrue(any("check" in m for m in found))
+
+    def test_unverifiable_must_be_dropped(self):
+        found = inbox_issues(captured(check="unverifiable", status="raw"))
+        self.assertTrue(any("dropped" in m for m in found))
+
+    def test_unverifiable_and_dropped_is_fine(self):
+        self.assertEqual(
+            inbox_issues(captured(check="unverifiable", status="dropped")), [])
+
+    def test_contradicts_stays_raw_until_promoted(self):
+        self.assertEqual(inbox_issues(captured(check="contradicts")), [])
+
+
+class TestInboxHelpers(unittest.TestCase):
+    def test_next_id_increments(self):
+        inbox = topics.Inbox(items=[captured(id="N-001"), captured(id="N-007")])
+        self.assertEqual(inbox.next_id(), "N-008")
+
+    def test_next_id_on_empty_inbox(self):
+        self.assertEqual(topics.Inbox().next_id(), "N-001")
+
+    def test_next_id_ignores_malformed(self):
+        inbox = topics.Inbox(items=[captured(id="N-002"), captured(id="주제")])
+        self.assertEqual(inbox.next_id(), "N-003")
+
+    def test_pending_excludes_checked(self):
+        inbox = topics.Inbox(items=[
+            captured(id="N-001", check="contradicts"),
+            captured(id="N-002"),
+        ])
+        self.assertEqual([i["id"] for i in inbox.pending()], ["N-002"])
+
+    def test_roundtrip_preserves_korean(self, ):
+        import tempfile
+        from pathlib import Path
+        inbox = topics.Inbox(items=[captured()])
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "inbox.yaml"
+            topics.save_inbox(inbox, path)
+            again = topics.load_inbox(path)
+        self.assertEqual(again.items[0]["claim"], inbox.items[0]["claim"])
+
+    def test_missing_file_gives_empty_inbox(self):
+        from pathlib import Path
+        self.assertEqual(topics.load_inbox(Path("/nonexistent/inbox.yaml")).items, [])
+
+
 class TestRealBacklog(unittest.TestCase):
     """저장소에 실제로 들어 있는 후보 풀이 규칙을 지키는지."""
 

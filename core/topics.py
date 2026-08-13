@@ -18,6 +18,7 @@ import yaml
 from . import config
 
 BACKLOG = config.ROOT / "topics" / "backlog.yaml"
+INBOX = config.ROOT / "topics" / "inbox.yaml"
 
 AXES = {
     1: "시장 국면",
@@ -80,6 +81,80 @@ class Backlog:
         if status:
             rows = [t for t in rows if t.get("status") == status]
         return rows
+
+
+CHECK_RESULTS = {"matches", "contradicts", "unverifiable"}
+
+# What a captured item must carry. The claim is the point: a headline is a
+# frame, a claim is something the data can disagree with.
+CAPTURE_REQUIRED = ("id", "headline", "claim", "source", "seen", "origin")
+
+
+@dataclass
+class Inbox:
+    """포착만 되고 아직 정식 후보가 아닌 것들.
+
+    여기 있는 항목은 축도 splits 도 없다. 그것을 채우는 일이 승격이고,
+    승격 전에 지표 대조를 통과해야 한다.
+    """
+
+    items: list[dict] = field(default_factory=list)
+
+    def get(self, item_id: str) -> dict | None:
+        wanted = item_id.upper()
+        return next((i for i in self.items
+                     if str(i.get("id", "")).upper() == wanted), None)
+
+    def pending(self) -> list[dict]:
+        return [i for i in self.items if not i.get("check")]
+
+    def next_id(self) -> str:
+        used = [int(str(i.get("id", "N-0"))[2:]) for i in self.items
+                if str(i.get("id", "")).upper().startswith("N-")
+                and str(i.get("id", ""))[2:].isdigit()]
+        return f"N-{max(used, default=0) + 1:03d}"
+
+
+def load_inbox(path: Path | None = None) -> Inbox:
+    src = path or INBOX
+    if not src.exists():
+        return Inbox()
+    raw = yaml.safe_load(src.read_text(encoding="utf-8")) or {}
+    return Inbox(items=raw.get("captured") or [])
+
+
+def save_inbox(inbox: Inbox, path: Path | None = None) -> Path:
+    dst = path or INBOX
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    body = yaml.safe_dump(
+        {"captured": inbox.items},
+        allow_unicode=True, sort_keys=False, width=88,
+    )
+    header = (
+        "# 포착함 — 읽다가 걸린 것을 그 자리에서 던져 넣는 곳.\n"
+        "#\n"
+        "# 여기 적는 것은 기사 요약이 아니라 기사가 하는 '검증 가능한 주장' 하나다.\n"
+        "# verify 를 채울 수 없으면 그 자리에서 버린다. 규칙은 docs/TOPICS.md.\n\n"
+    )
+    dst.write_text(header + body, encoding="utf-8")
+    return dst
+
+
+def validate_inbox(inbox: Inbox) -> list[Issue]:
+    out: list[Issue] = []
+    for item in inbox.items:
+        iid = str(item.get("id", "?"))
+        for f in CAPTURE_REQUIRED:
+            if not item.get(f):
+                out.append(Issue(iid, f"필수 필드 없음: {f}"))
+        if (c := item.get("check")) and c not in CHECK_RESULTS:
+            out.append(Issue(iid, f"check 는 {sorted(CHECK_RESULTS)} 중 하나 (현재 {c!r})"))
+        # An unfalsifiable claim fails 탈락 조건 2 before anyone spends time on it
+        if not item.get("verify"):
+            out.append(Issue(iid, "verify 가 비어 있다 — 데이터로 확인할 방법이 없으면 주제가 아니다"))
+        if item.get("check") == "unverifiable" and item.get("status") != "dropped":
+            out.append(Issue(iid, "확인 불가로 판정됐으면 status 를 dropped 로 내린다"))
+    return out
 
 
 def load(path: Path | None = None) -> Backlog:

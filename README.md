@@ -16,7 +16,7 @@ Step 1 (데이터 레이어)와 주제 후보 풀까지 구현됨.
 |---|---|---|
 | 0 | study-pack — 포맷 계약, 산출물 5종 | 완료 (별도 Cursor 스킬) |
 | **1** | **`core/sources` + `transform` + 캐시** | **완료** |
-| **1.5** | **주제 후보 풀 + 선정 규칙 + 검사기** | **완료** |
+| **1.5** | **주제 포착·대조·후보 풀 + 선정 규칙** | **완료** |
 | 2 | `session.yaml` → pack.json 자동 생성 | 예정 |
 | 3 | Verifier (숫자 대조) | 예정 |
 | 4 | Builder / Skeptic 병렬 | 예정 |
@@ -65,7 +65,18 @@ python3 cli.py financials 005930 --year 2025 --report annual
 python3 cli.py transform krx krx_close_005930 yoy --save
 python3 cli.py transform krx krx_close_005930 annualized --kwargs '{"months": 3}'
 
-# 주제 후보
+# 주제 — 읽다가 걸린 것을 던져 넣는다
+python3 cli.py topics capture \
+  --headline "장기금리 급등, 재정 적자 우려 확산" \
+  --claim   "국고 30년 금리 상승의 주된 원인은 국채 발행 증가다" \
+  --source  "한국경제 2026-08-11" \
+  --verify  "krx bond_kts 커브, 기재부 발행계획"
+
+# 지표로 대조한 뒤 판정
+python3 cli.py topics check N-001 --result contradicts --note "커브가 뒤쪽만 들렸다"
+python3 cli.py topics inbox --pending
+
+# 후보 풀
 python3 cli.py topics list
 python3 cli.py topics list --axis 4 --ready full
 python3 cli.py topics show T-002
@@ -78,10 +89,24 @@ python3 cli.py cache
 `--refresh`는 캐시를 무시하고 재요청한다. `--save`는 `series/`에 CSV와
 출처 사이드카(`.meta.json`)를 남긴다.
 
-## 주제 후보 풀
+## 주제 선정
 
-`topics/backlog.yaml`이 후보 풀, `docs/TOPICS.md`가 규칙이다. 6축 전체에
-후보를 깔아두는 이유는 단순하다. **좋은 주제만 고르면 자연히 거시로 쏠린다.**
+규칙은 [`docs/TOPICS.md`](docs/TOPICS.md), 포착함은 `topics/inbox.yaml`,
+후보 풀은 `topics/backlog.yaml`이다.
+
+**뉴스가 유입, 지표가 검증이다.** 뉴스 단독으로 고르면 가격에 후행하고
+프레임에 갇히고 결국 서사를 전달하게 된다. 지표 단독으로 고르면 아무도
+궁금해하지 않는 이상치가 나온다. 지표가 광범위해서 못 쓰겠다는 것은
+출발점으로 쓸 때만 맞는 말이고, 검증 도구로 쓰면 범위를 뉴스가 정해준다.
+
+포착할 때 적는 것은 기사 요약이 아니라 **기사가 하는 검증 가능한 주장
+하나**다. `--verify`를 채울 수 없으면 그 자리에서 버린다.
+
+대조 결과가 셋으로 갈린다. 주장과 데이터가 일치하면 확인하는 자리가 되니
+좋은 주제가 아니고, **어긋나면 가장 좋은 주제이며**, 확인이 안 되면 탈락이다.
+지난 엔캐리 회차가 두 번째였다.
+
+후보 풀은 6축 전체를 채워둔다. **좋은 주제만 고르면 자연히 거시로 쏠린다.**
 축을 먼저 정하고 그 안에서 고르는 순서가 아니면 항상 1축이 이긴다.
 
 `topics validate`가 검사하는 것은 코드 품질이 아니라 모임의 형식이다.
@@ -94,9 +119,16 @@ python3 cli.py cache
 - 개인 축(4·5·6)이라도 운영자 준비물을 적게 한다. "각자 알아서"로 두면
   빈손으로 나가게 된다
 - 6축 중 후보가 없는 축을 보고한다
+- 포착 단계에서 `verify`가 비어 있으면 잡는다. 반증 불가능한 주장은 가장
+  싼 시점에 걸러야 한다
 
 실제로 이 검사기가 초안에서 두 건을 잡았다. 질문 뒤에 서술문이 붙은 후보와,
 부족한 데이터를 안 적은 후보였다.
+
+**뉴스 수집은 자동화하지 않는다.** 자동으로 모으면 많이 나온 것이 올라오는데
+그게 정확히 피하려던 것이다. 포착은 사람이 30초 쓰는 편이 낫고, 같은 통로를
+참가자에게 열어두는 것(`--origin "참가자 제안" --by`)이 수요자 주도의 실제
+구현이다.
 
 ## 데이터 소스
 
@@ -189,7 +221,7 @@ python3 cli.py ecos series 722Y001 --items 0101000 --cycle M --start 202401 --en
 python3 -m unittest discover -s tests -t .
 ```
 
-66개. 네트워크가 필요 없다. 대부분은 실제로 한 번 물렸던 곳을 고정한 것이다 —
+80개. 네트워크가 필요 없다. 대부분은 실제로 한 번 물렸던 곳을 고정한 것이다 —
 월말 인덱스 시프트, 중복 날짜, 자격증명 유출, 후보 풀의 결론 유입.
 
 이 테스트들은 장식이 아니라 실제로 두 개의 조용한 오류를 잡았다.
