@@ -1,0 +1,19 @@
+{
+  "source": "dart",
+  "dataset": "disclosures",
+  "label": "삼성전자 공시 20260101~20260812",
+  "params": {
+    "ticker": "005930",
+    "start": "20260101",
+    "end": "20260812",
+    "types": "A"
+  },
+  "cache_keys": [
+    "8aa6fe5037950fdede61"
+  ],
+  "fetched_at": "2026-08-13T05:07:10.625700+00:00",
+  "unit": null,
+  "frequency": null,
+  "citation": "금융감독원 전자공시시스템(DART) Open API",
+  "lineage": []
+}

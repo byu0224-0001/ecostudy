@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Fetched artifacts. The cache is reproducible from source, so it is not
+# committed; provenance sidecars under series/ are small and ARE committed
+# so a session stays auditable without re-fetching.
+cache/
+.DS_Store
