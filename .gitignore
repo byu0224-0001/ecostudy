@@ -8,4 +8,5 @@ venv/
 # committed; provenance sidecars under series/ are small and ARE committed
 # so a session stays auditable without re-fetching.
 cache/
+series/
 .DS_Store
