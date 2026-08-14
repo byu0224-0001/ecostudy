@@ -256,5 +256,103 @@ class TestRealBacklog(unittest.TestCase):
         self.assertIsNotNone(topics.load().get("t-001"))
 
 
+def promoted(**overrides) -> dict:
+    kw = {
+        "topic_id": "T-001",
+        "axis": 4,
+        "judgment": "리스크",
+        "question": "내 포트폴리오에서 무엇이 먼저 무너지나",
+        "splits": ["되돌림이 남았다", "실적이 받친다"],
+        "output": "유지할 것과 줄일 것",
+        "ready": "partial",
+        "series": [{"source": "krx", "dataset": "bond_kts"}],
+    }
+    kw.update(overrides)
+    item = captured(check="contradicts", check_note="커브가 뒤쪽만 들렸다")
+    return topics.promote(item, **kw)
+
+
+class TestPromote(unittest.TestCase):
+    """승격은 확인한 근거를 옮기고, 판단은 사람에게 남긴다."""
+
+    def test_evidence_is_carried_forward(self):
+        topic = promoted()
+        texts = [w["text"] for w in topic["why_now"]]
+        self.assertIn(captured()["claim"], texts)
+        self.assertIn("커브가 뒤쪽만 들렸다", texts)
+        self.assertTrue(any("contradicts" in w["source"] for w in topic["why_now"]))
+        self.assertEqual(topic["links"], ["N-999"])
+
+    def test_result_passes_the_format_contract(self):
+        self.assertEqual(issues_for(promoted()), [])
+
+    def test_single_split_is_still_caught(self):
+        found = issues_for(promoted(splits=["한쪽뿐"]))
+        self.assertTrue(any("splits" in m for m in found), found)
+
+    def test_partial_without_series_is_still_caught(self):
+        found = issues_for(promoted(series=[]))
+        self.assertTrue(any("series" in m for m in found), found)
+
+    def test_no_conclusion_field_sneaks_in(self):
+        self.assertFalse(set(promoted()) & topics.BANNED_FIELDS)
+
+    def test_every_axis_has_a_framing(self):
+        self.assertEqual(set(topics.FRAMINGS), set(topics.AXES))
+
+    def test_next_id_continues_the_sequence(self):
+        backlog = topics.Backlog(topics=[{"id": "T-003"}, {"id": "T-011"}])
+        self.assertEqual(topics.next_topic_id(backlog), "T-012")
+        self.assertEqual(topics.next_topic_id(topics.Backlog()), "T-001")
+
+
+class TestSeriesSpec(unittest.TestCase):
+    """세 번째 조각의 이름이 소스마다 다르다."""
+
+    def test_ecos_uses_item_codes(self):
+        self.assertEqual(
+            topics.parse_series("ecos:901Y055:S22CC:VA"),
+            {"source": "ecos", "dataset": "901Y055", "items": ["S22CC", "VA"]},
+        )
+
+    def test_krx_uses_a_column(self):
+        self.assertEqual(
+            topics.parse_series("krx:index_kospi:CLSPRC_IDX"),
+            {"source": "krx", "dataset": "index_kospi", "field": "CLSPRC_IDX"},
+        )
+
+    def test_dataset_alone_is_enough(self):
+        self.assertEqual(
+            topics.parse_series("dart:financials"),
+            {"source": "dart", "dataset": "financials"},
+        )
+
+    def test_bare_source_is_rejected(self):
+        with self.assertRaises(ValueError):
+            topics.parse_series("ecos")
+
+
+class TestBacklogRoundTrip(unittest.TestCase):
+    """축별로 파일을 다시 쓰므로 기존 항목이 변형되면 안 된다."""
+
+    def test_nothing_is_lost_or_changed(self):
+        import tempfile
+        from pathlib import Path
+
+        original = topics.load()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "backlog.yaml"
+            topics.save(original, path)
+            reloaded = topics.load(path)
+
+        self.assertEqual(reloaded.meta, original.meta)
+        self.assertEqual(reloaded.books, original.books)
+        before = {t["id"]: t for t in original.topics}
+        self.assertEqual({t["id"] for t in reloaded.topics}, set(before))
+        for topic in reloaded.topics:
+            self.assertEqual(topic, before[topic["id"]], topic["id"])
+        self.assertEqual(topics.validate(reloaded), [])
+
+
 if __name__ == "__main__":
     unittest.main()

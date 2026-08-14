@@ -8,6 +8,7 @@ This is the single place that behaviour lives now.
 from __future__ import annotations
 
 import random
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -36,6 +37,13 @@ class Response:
     content_type: str
     url: str
     elapsed_ms: int
+
+    @property
+    def text(self) -> str:
+        """Decoded body. Feeds and HTML pages need text; data APIs use bytes."""
+        match = re.search(r"charset=([\w-]+)", self.content_type or "", re.I)
+        encoding = match.group(1) if match else "utf-8"
+        return self.body.decode(encoding, errors="replace")
 
 
 class Client:

@@ -12,8 +12,9 @@ captured:
   origin: 뉴스
   verify: krx bond_kts 커브 변화, 기재부 발행계획
   check: contradicts
-  status: raw
+  status: promoted
   check_note: 커브가 평행이동이 아니라 뒤쪽만 들렸다(30Y +197bp vs 2Y +125bp). 발행 증가만으로는 만기별 차이를 설명 못 한다
+  topic: T-020
 - id: N-002
   headline: 금리 올라도 주식이 오르는 이유가 궁금해요
   claim: 금리 상승기에는 주가가 눌리는 것이 정상이다
@@ -21,6 +22,34 @@ captured:
   seen: '2026-08-13'
   origin: 참가자 제안
   verify: krx index_kospi 와 bond_kts 를 같은 기간에 겹쳐 본다
-  check: null
-  status: raw
+  check: contradicts
+  status: promoted
   by: OO님
+  check_note: ECOS 817Y002 국고10년 + 802Y001 코스피, 2015~2026 60영업일 창 2,790개. 금리 상승 국면 1,066개에서
+    코스피 평균 +6.50%(상승비율 62%), 하락 국면 957개에서 -0.47%(45%). 상관 +0.150 으로 부호가 통념과 반대다. 다만 2022년만
+    상승비율 2%, 평균 -6.71% — 예외가 규칙보다 크다
+  topic: T-019
+- id: N-003
+  headline: 미국의 엔화 구출 작전 / 미국이 엔화 방어에 나선 진짜 이유
+  claim: 최근 엔화 반등은 미국의 개입 때문이다
+  source: 언더스탠딩·삼프로TV 2026-08-12~13 (두 채널 교차)
+  seen: '2026-08-13'
+  origin: youtube:understanding,3pro
+  verify: ecos 731Y002 엔/달러 일별, CFTC TFF 레버리지펀드 포지션, 미 재무부·BOJ 개입 공표
+  check: cause_open
+  status: promoted
+  check_note: 'ECOS 731Y002 일별: 7/29 고점 163.86 → 7/31 하루 만에 -2.2%(개입 서명) → 8/4 저점 157.32 →
+    8/13 159.38. UPPITY 8/13 이 미일 공동 개입이라 보도했으나 1차(미 재무부·BOJ 공표)로는 확인 못 했다. 같은 기사가 저점을 155엔대라
+    썼는데 일별 매매기준율은 157.32 다. 더 중요한 것은 효과의 31%를 이미 반납했다는 점'
+  topic: T-021
+- id: N-004
+  headline: 대만으로 가는 외국인을 잡아라 / 한국만 뜯어먹힌 이유
+  claim: 외국인 자금이 한국에서 대만으로 이동해 코스피만 유독 부진했다
+  source: 삼프로TV·언더스탠딩 2026-08-11~13
+  seen: '2026-08-13'
+  origin: youtube:3pro,understanding
+  verify: krx 투자자별 순매수, 코스피 vs 대만 가권 vs 닛케이 연초대비 수익률
+  check: contradicts
+  status: promoted
+  check_note: 코스피 2024년말 대비 +253%로 세계 1위
+  topic: T-018

@@ -83,7 +83,9 @@ class Backlog:
         return rows
 
 
-CHECK_RESULTS = {"matches", "contradicts", "unverifiable"}
+# 뉴스의 주장은 대개 '무엇이 일어났다(관측) + 왜냐하면(인과)' 두 겹이다.
+# 관측은 대개 맞고, 이견은 인과에 있다. cause_open 이 그 자리를 가리킨다.
+CHECK_RESULTS = {"matches", "contradicts", "cause_open", "unverifiable"}
 
 # What a captured item must carry. The claim is the point: a headline is a
 # frame, a claim is something the data can disagree with.
@@ -167,6 +169,138 @@ def load(path: Path | None = None) -> Backlog:
         books=raw.get("books") or [],
         meta=raw.get("meta") or {},
     )
+
+
+BACKLOG_HEADER = """\
+# 주제 후보 풀
+#
+# 규칙과 필드 정의는 docs/TOPICS.md 에 있다.
+# 결론은 적지 않는다. 질문과, 그 질문을 좁힐 데이터까지만 적는다.
+#
+# 이 파일은 topics promote 가 다시 쓴다. 항목 안에 손으로 주석을 달면
+# 다음 승격 때 사라진다. 남길 말은 note 필드에 적는다.
+"""
+
+# 같은 사건도 축에 따라 전혀 다른 회차가 된다. 승격할 때 이걸 한 번은
+# 보게 만든다. 문장을 대신 써주지는 않는다 — 질문을 쓰는 일이 곧 판단이다.
+FRAMINGS = {
+    1: "이 변화가 시장 국면을 바꾸는가. 무엇을 다시 봐야 하나",
+    2: "이 변화가 산업·섹터 간 상대우위를 바꾸는가",
+    3: "이 변화를 가장 크게 받는 기업은 어디고, 재무에서 확인되는가",
+    4: "내 포트폴리오에서 이 변화에 취약한 자산은 무엇인가",
+    5: "이 변화가 오기 전 내 판단은 무엇이었고 어디가 틀렸나",
+    6: "이 변화 앞에서 내가 견딜 수 있는 범위는 어디까지인가",
+}
+
+# 대조를 통과하지 못한 것은 승격하지 않는다.
+PROMOTABLE = {"contradicts", "cause_open", "matches"}
+
+
+def next_topic_id(backlog: Backlog) -> str:
+    used = [int(str(t.get("id", "T-0"))[2:]) for t in backlog.topics
+            if str(t.get("id", "")).upper().startswith("T-")
+            and str(t.get("id", ""))[2:].isdigit()]
+    return f"T-{max(used, default=0) + 1:03d}"
+
+
+def save(backlog: Backlog, path: Path | None = None) -> Path:
+    """축별로 묶어 다시 쓴다. 구분선은 손으로 유지하지 않는다."""
+    dst = path or BACKLOG
+    chunks = [BACKLOG_HEADER, "\n"]
+
+    if backlog.meta:
+        chunks.append(yaml.safe_dump({"meta": backlog.meta}, allow_unicode=True,
+                                     sort_keys=False, width=88))
+
+    chunks.append("\ntopics:\n")
+    for axis, name in AXES.items():
+        rows = [t for t in backlog.topics if t.get("axis") == axis]
+        if not rows:
+            continue
+        chunks.append(f"\n  # ── {axis}축 {name} " + "─" * max(4, 44 - len(name)) + "\n\n")
+        body = yaml.safe_dump(rows, allow_unicode=True, sort_keys=False, width=88)
+        chunks.append("\n".join("  " + line if line else ""
+                                for line in body.splitlines()) + "\n")
+
+    orphans = [t for t in backlog.topics if t.get("axis") not in AXES]
+    if orphans:
+        chunks.append("\n  # ── 축 미지정 ─────────────────────────────────\n\n")
+        body = yaml.safe_dump(orphans, allow_unicode=True, sort_keys=False, width=88)
+        chunks.append("\n".join("  " + line if line else ""
+                                for line in body.splitlines()) + "\n")
+
+    if backlog.books:
+        chunks.append("\n# ── 독서 트랙 " + "─" * 44 + "\n\nbooks:\n\n")
+        body = yaml.safe_dump(backlog.books, allow_unicode=True,
+                              sort_keys=False, width=88)
+        chunks.append("\n".join("  " + line if line else ""
+                                for line in body.splitlines()) + "\n")
+
+    dst.write_text("".join(chunks), encoding="utf-8")
+    return dst
+
+
+def parse_series(spec: str) -> dict:
+    """`source:dataset[:항목]` 을 후보의 series 항목으로.
+
+    세 번째 조각의 이름이 소스마다 다르다. ECOS 는 항목코드로 시리즈를
+    좁히고 KRX 는 컬럼을 고른다. 기존 후보들이 이미 그렇게 적혀 있어
+    같은 모양을 유지한다.
+    """
+    parts = [p.strip() for p in spec.split(":") if p.strip()]
+    if len(parts) < 2:
+        raise ValueError(f"series 는 'source:dataset[:항목]' 형식입니다: {spec!r}")
+
+    source, dataset, *rest = parts
+    out = {"source": source, "dataset": dataset}
+    if rest:
+        out["items" if source == "ecos" else "field"] = (
+            rest if source == "ecos" else rest[0]
+        )
+    return out
+
+
+def promote(item: dict, *, topic_id: str, axis: int, judgment: str,
+            question: str, splits: list[str], output: str,
+            ready: str, series: list[dict] | None = None,
+            title: str | None = None, prep: int | None = None,
+            note: str | None = None) -> dict:
+    """포착 항목을 정식 후보로 만든다.
+
+    자동으로 채우는 것은 **이미 확인한 것**뿐이다. 출처와 대조 결과가
+    `why_now` 로 넘어간다. 그게 이 명령의 값이다 — 힘들게 확인한 근거를
+    다시 타이핑하지 않게 하는 것.
+
+    질문·찬반·산출물은 넘겨받지 않고 인자로 요구한다. 그 셋이 정렬 기준
+    1·2번에 직접 걸리는 것이고, 사람만 쓸 수 있다. 채우지 못하면 회차로
+    낼 준비가 안 된 것이다.
+    """
+    why_now = [{"text": item["claim"], "source": item["source"]}]
+    if item.get("check_note"):
+        why_now.append({
+            "text": item["check_note"],
+            "source": f"지표 대조 ({item['check']})",
+        })
+
+    topic = {
+        "id": topic_id,
+        "axis": axis,
+        "judgment": judgment,
+        "title": title or item["headline"],
+        "question": question,
+        "why_now": why_now,
+        "splits": splits,
+        "data": {"ready": ready, "series": series or [],
+                 "note": item.get("verify", "")},
+        "output": output,
+        "prep": prep or 3,
+        "origin": item.get("origin") or "포착",
+        "links": [item["id"]],
+        "status": "candidate",
+    }
+    if note:
+        topic["note"] = note
+    return topic
 
 
 def _check_topic(t: dict) -> list[Issue]:
