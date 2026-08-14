@@ -717,7 +717,7 @@ def cmd_topics_mail(args) -> int:
 
     if args.events:
         from core import events as ev
-        evts = ev.cluster(letters, day=target)
+        evts = ev.cluster(letters, day=target, limit=ev.EVENT_CAP)
         cands = ev.study_candidates(evts)
         print(f"\n■ {target} — 사건 {len(evts)}건 / 스터디 후보 {len(cands)}건")
         for e in evts[:8]:
@@ -767,7 +767,12 @@ def cmd_topics_mail(args) -> int:
 
 # --- 정답지 --------------------------------------------------------------
 
-WANT = {"blocks": 80, "claims": 100, "recall": 20, "pairs": 80, "topics": 15}
+WANT = {"blocks": 80, "claims": 100, "recall": 20,
+        "cluster": 30, "pairs": 80, "topics": 15}
+
+# 100개를 다 붙이고 나서 기준이 흔들리면 100개를 다시 해야 한다. 앞의
+# 스무 개로 경계를 먼저 확인하고, 기준을 고친 뒤 나머지를 붙인다.
+CALIBRATION = 20
 
 
 def _claim_id(letter, item) -> str:
@@ -820,8 +825,9 @@ def cmd_golden_seed(args) -> int:
     print("한 번 더 비우므로 모델이 만든 값이 정답으로 새어 들어갈 수 없다.")
     print("휴리스틱 추측(heuristic)이 같이 들어 있지만 그건 답이 아니라")
     print("우리가 맞히려는 대상이다. 보고 따라 쓰면 채점이 무의미해진다.")
-    print("\n순서는 claims → recall → pairs → topics 다. 사건은 주장을 재료로")
-    print("만들어지므로 재료가 성한지 먼저 봐야 한다.")
+    print(f"\n주장 {CALIBRATION}건부터다. 100건을 다 붙인 뒤 기준이 흔들리면")
+    print("100건을 다시 해야 한다. 앞의 스무 개로 경계를 먼저 확인하고,")
+    print("기준을 고친 뒤 나머지를 붙인다.")
     return 0
 
 
@@ -858,7 +864,10 @@ def _seed_rows(layer: str, letters: list, want: int) -> list[dict]:
                     "duplicate_of": None,
                     "note": "",
                 })
-        return _spread(rows, want, key=lambda r: r["heuristic"])
+        rows = _spread(rows, want, key=lambda r: r["heuristic"])
+        for n, r in enumerate(rows):
+            r["calibration"] = n < CALIBRATION
+        return rows
 
     if layer == "recall":
         # 주장마다 라벨을 붙이는 것으로는 '빠진 것'을 못 센다. 아예 안 뽑힌
@@ -883,6 +892,33 @@ def _seed_rows(layer: str, letters: list, want: int) -> list[dict]:
                     "note": "",
                 })
         return _spread(rows, want, key=lambda r: r["source"])
+
+    if layer == "cluster":
+        # 좁은 구간 하나를 빠짐없이 훑는다. 기계가 올린 쌍만 정답지에 넣으면
+        # 찾기 재현율은 정의상 100% 가 된다 — 놓친 쌍은 정답지에 없으니까.
+        # 하루치를 통째로 쓰면 4천 쌍이라 사람이 못 한다. 대신 그 하루에서
+        # 무작위로 추려 그 안을 전부 본다. 치우치지 않은 표본이므로 거기서
+        # 나온 재현율은 그대로 믿을 수 있다.
+        import random
+        day = min({newsletters._day(L) for L in letters})
+        pool = [(L, i) for L in letters if newsletters._day(L) == day
+                for i in L.claims if i.verification_mode != "not_researchable"]
+        rng = random.Random(11)
+        rng.shuffle(pool)
+        pool = pool[:want]
+
+        machine = {}
+        for e in events.cluster(letters):
+            for c in e.claims:
+                machine[(c["source"], c["claim"])] = e.event_id
+        return [{
+            "id": _claim_id(L, i),
+            "day": day, "source": L.name, "claim": i.text,
+            "machine_event": machine.get((L.name, i.text)),
+            "event_group": None,   # 같은 사건이면 같은 이름을 적는다
+            "theme_group": None,   # 사건은 다르지만 같은 줄기면 같은 이름
+            "note": "",
+        } for L, i in pool]
 
     if layer == "pairs":
         # 사건끼리가 아니라 주장끼리 짝짓는다. 묶는 기계가 답하는 질문이
@@ -1038,7 +1074,18 @@ def cmd_golden_score(args) -> int:
                 print(f"    한 분류가 {big / s.n * 100:.0f}% 다. 전체 정확도는")
                 print(f"    믿지 말고 분류별 F1 을 봐라.")
 
-    # 4. 찾기와 판정을 갈라서 — 앞 단계가 안 올린 쌍은 판정 몫이 아니다
+    # 4. 좁은 구간 전수 — 기계가 올린 쌍만 보면 재현율은 늘 100% 가 된다
+    ex = golden.score_retrieval_exhaustive(golden.load("cluster", args.split))
+    if ex.get("n"):
+        scored = True
+        print(f"\n  묶기 (주장 {ex['claims']}개 · 쌍 {ex['n']}개 전수)")
+        print(f"    사람이 본 같은 사건 {ex['same_event']}쌍")
+        print(f"    그중 기계도 묶은 것 {ex['found']}쌍"
+              f"  재현율 {ex['recall'] * 100:.1f}%")
+        print(f"    엉뚱하게 묶은 것 {ex['over_merged']}쌍"
+              f"  정밀도 {ex['precision'] * 100:.1f}%")
+
+    # 5. 찾기와 판정을 갈라서 — 앞 단계가 안 올린 쌍은 판정 몫이 아니다
     ret = golden.score_retrieval(golden.load("pairs", args.split))
     if ret.get("n"):
         scored = True
@@ -1061,6 +1108,55 @@ def cmd_golden_score(args) -> int:
     if scored:
         print("\n  이 숫자는 휴리스틱의 성적이다. Luna·Terra 를 붙일 때")
         print("  같은 정답지로 재서 비교해야 비용을 올릴 근거가 생긴다.")
+    print()
+    return 0
+
+
+def cmd_golden_import_canvas(args) -> int:
+    """캔버스에서 붙인 라벨을 claims.jsonl 로 옮긴다."""
+    from pathlib import Path
+    import json
+
+    root = Path.home() / ".cursor/projects/Users-byeong-uk-yu-Desktop-study-os/canvases"
+    sidecar = Path(args.canvas) if args.canvas else root / "golden-calibration.canvas.data.json"
+    if not sidecar.exists():
+        print(f"캔버스 저장 파일이 없다: {sidecar}")
+        print("먼저 golden-calibration.canvas.tsx 를 열고 라벨을 붙여라.")
+        return 1
+
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"읽기 실패: {e}")
+        return 1
+
+    labels = data.get("golden-labels") or {}
+    if not labels:
+        print("golden-labels 가 비어 있다. 캔버스에서 utility 를 선택했는지 확인하라.")
+        return 1
+
+    rows = golden.load("claims", args.split)
+    by_id = {r["id"]: r for r in rows}
+    updated = 0
+    for cid, lab in labels.items():
+        if cid not in by_id:
+            continue
+        u = (lab or {}).get("utility") or ""
+        if u not in golden.CLAIM_UTILITY:
+            continue
+        by_id[cid]["utility"] = u
+        note = (lab or {}).get("note") or ""
+        if note:
+            by_id[cid]["note"] = note
+        updated += 1
+
+    golden.save("claims", list(by_id.values()), args.split)
+    print(f"\n■ 캔버스 → claims.jsonl  {updated}건 반영 ({args.split})")
+    u = golden.score_utility(list(by_id.values()))
+    if u.get("n"):
+        print(f"  남길 비율 {u['keep_rate'] * 100:.1f}%"
+              f"  (핵심 {u['core_rate'] * 100:.1f}%)  n={u['n']}")
+    print("  python3 cli.py golden score 로 전체 채점을 본다.")
     print()
     return 0
 
@@ -1443,6 +1539,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = gsub.add_parser("score", help="라벨과 예측을 맞춰 본다")
     sp.add_argument("--split", default="dev", choices=list(golden.SPLITS))
     sp.set_defaults(func=cmd_golden_score)
+
+    sp = gsub.add_parser("import-canvas", help="캔버스 라벨을 claims.jsonl 에 반영")
+    sp.add_argument("--split", default="dev", choices=list(golden.SPLITS))
+    sp.add_argument("--canvas", default="", help="캔버스 .canvas.data.json 경로")
+    sp.set_defaults(func=cmd_golden_import_canvas)
 
     sp = tsub.add_parser("sources", help="소스 목록과 각 층의 역할")
     sp.set_defaults(func=cmd_topics_sources)

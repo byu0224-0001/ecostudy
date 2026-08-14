@@ -105,6 +105,8 @@ python3 cli.py golden score             # 채점
 
 여기만 채워도 880 중 몇 개가 필요했는지 답이 나온다.
 
+**캔버스로 붙이기:** [golden-calibration.canvas.tsx](/Users/byeong-uk-yu/.cursor/projects/Users-byeong-uk-yu-Desktop-study-os/canvases/golden-calibration.canvas.tsx) 를 채팅 옆에서 열고 20건을 먼저 본다. 끝나면 `python3 cli.py golden import-canvas`.
+
 ### 나머지 칸
 
 `label` — 무엇에 관한 말인가. `numeric_fact` `event_fact`
@@ -127,23 +129,35 @@ python3 cli.py golden score             # 채점
 
 ```json
 {"id": "DAILY_BYTE:2026-08-13:b4", "text": "블록 원문 전체...",
- "extracted": ["뽑힌 주장 1", "뽑힌 주장 2", "뽑힌 주장 3"],
+ "extracted": ["뽑힌 주장 1", "뽑힌 주장 2"],
  "reviewed": false, "kept_count": null, "missed": [], "note": ""}
 ```
 
 **주장마다 라벨을 붙이는 것으로는 빠진 것을 셀 수 없다.** 아예 안 뽑힌
-주장에는 붙일 라벨이 없기 때문이다. 그래서 블록을 통째로 읽는 층을 따로 둔다.
-
-이게 없으면 880이 과추출인지 recall 개선인지 영영 못 가른다. `claims` 에서
-재는 것은 뽑은 것의 질뿐이다.
+주장에는 붙일 라벨이 없기 때문이다. 블록을 통째로 읽고 `missed` 에 적는다.
 
 1. 블록 원문(`text`)을 읽는다.
 2. `extracted` 중 실제로 필요했던 개수를 `kept_count` 에 적는다.
 3. 뽑혔어야 하는데 빠진 주장을 `missed` 에 문장으로 적는다.
 4. `reviewed` 를 `true` 로 바꾼다.
 
-`missed` 가 계속 비면 추출은 충분하고 남는 게 문제라는 뜻이다. 반대로
-자주 차면 기준을 너무 좁게 준 것이다.
+---
+
+## cluster.jsonl — 좁은 구간 전수 (묶기 재현율)
+
+```json
+{"id": "...", "day": "2026-08-10", "source": "UPPITY", "claim": "...",
+ "machine_event": "E-012", "event_group": null, "theme_group": null, "note": ""}
+```
+
+기계가 올린 쌍만 정답지에 넣으면 찾기 재현율은 정의상 100% 가 된다.
+그래서 하루치 주장 30개를 골라 **사람이 더미로 나눈다.**
+
+- `event_group` — 같은 사건이면 **같은 이름**을 적는다 (예: `코스닥급등`)
+- `theme_group` — 사건은 다르지만 같은 줄기면 같은 이름
+
+30개를 나누면 그 안의 435쌍 답이 전부 따라 나온다. `machine_event` 와
+비교하면 기계가 같은 사건을 얼마나 찾았는지 재현율이 나온다.
 
 ---
 
@@ -157,8 +171,8 @@ python3 cli.py golden score             # 채점
  "heuristic": "same_event", "label": null, "note": ""}
 ```
 
-사건끼리가 아니라 **주장끼리** 짝지어져 있다. 묶는 기계가 실제로 답하는
-질문이 "이 두 주장이 한 사건인가"이기 때문이다.
+사건끼리가 아니라 **주장끼리** 짝지어져 있다. Claim Pair는 Event 자체가
+아니라 Event clustering을 위한 **pairwise evidence**다.
 
 | 값 | 언제 |
 | --- | --- |
@@ -166,22 +180,10 @@ python3 cli.py golden score             # 채점
 | `related_theme` | 다른 일이지만 같은 줄기다 |
 | `unrelated` | 남남이다 |
 
-가운데가 제일 중요하다. 알파벳 AI 회사채 발행과 메타 AI 설비투자는 같은
-사건이 아니지만 "하이퍼스케일러가 외부 자금으로 AI 투자를 늘린다"는 같은
-줄기다. 같은 사건이라 하면 사실이 왜곡되고, 남남이라 하면 좋은 주제를 놓친다.
-
-기준: **한 문단으로 같이 서술하면 어색한가**. 어색하면 `same_event` 가 아니다.
-그래도 한 회차에서 같이 다룰 만하면 `related_theme` 다.
-
 날짜를 꼭 보라. "코스피 6,813.34 상승"과 "코스피 6,579.04 상승"은 단어가
-100% 겹치지만 **다른 날의 다른 마감**이다. 같은 사건이 아니다. 이런 쌍을
-일부러 넣어 뒀다.
+100% 겹치지만 **다른 날의 다른 마감**이다.
 
 `retrieved` 는 기계가 이 둘을 실제로 한 사건에 넣었는지다. 고치지 마라.
-사람 답과 어긋나는 지점이 곧 고칠 곳이다.
-
-세 뉴스레터가 같은 로이터 기사를 옮긴 것으로 보이면 `note` 에 적어 달라.
-근거가 셋인 것처럼 세는 문제가 있어서 나중에 손볼 재료가 된다.
 
 ---
 

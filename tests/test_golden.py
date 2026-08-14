@@ -47,6 +47,31 @@ def test_per_label_exposes_what_accuracy_hides():
     assert s.per_label()["same_event"]["recall"] == 0.0
 
 
+def test_derive_pairs_from_event_groups():
+    rows = [
+        {"id": "a", "event_group": "X", "theme_group": None},
+        {"id": "b", "event_group": "X", "theme_group": None},
+        {"id": "c", "event_group": "Y", "theme_group": "T"},
+        {"id": "d", "event_group": "Z", "theme_group": "T"},
+    ]
+    got = golden.derive_pairs(rows)
+    assert got[tuple(sorted(("a", "b")))] == "same_event"
+    assert got[tuple(sorted(("c", "d")))] == "related_theme"
+    assert got[tuple(sorted(("a", "c")))] == "unrelated"
+
+
+def test_exhaustive_retrieval_catches_missed_same_events():
+    rows = [
+        {"id": "a", "event_group": "E1", "machine_event": "M1"},
+        {"id": "b", "event_group": "E1", "machine_event": "M1"},
+        {"id": "c", "event_group": "E1", "machine_event": None},
+    ]
+    got = golden.score_retrieval_exhaustive(rows)
+    assert got["same_event"] == 3          # a-b, a-c, b-c
+    assert got["found"] == 1               # only a-b both in M1
+    assert got["recall"] == pytest.approx(1 / 3)
+
+
 def test_progress_asks_each_layer_the_right_question():
     """계층마다 '채웠다'의 뜻이 다르다.
 

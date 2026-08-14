@@ -43,6 +43,11 @@ from .sessions import _stem
 
 MIN_TOKEN = 3
 MIN_CLAIMS = 2
+
+# 화면에 몇 개까지 보여 줄까. **묶는 일 자체를 여기서 끊으면 안 된다.**
+# 처음에는 cluster() 안에서 12개를 만들고 멈췄는데, 그러면 주장 1,162개 중
+# 201개(17%)만 어떤 사건에도 들어가고 나머지는 통째로 사라진다. 그 상태로
+# 찾기 재현율을 재면 묶는 방법이 아니라 이 숫자를 재게 된다.
 EVENT_CAP = 12
 
 # 며칠 안을 한 묶음 후보로 볼 것인가. **사건의 정의가 아니라 검색 범위다.**
@@ -144,7 +149,13 @@ def _near(a: str, b: str) -> bool:
     return abs((da - db).days) <= WINDOW
 
 
-def cluster(letters: list[nl.Newsletter], *, day: str | None = None) -> list[Event]:
+def cluster(letters: list[nl.Newsletter], *, day: str | None = None,
+            limit: int | None = None) -> list[Event]:
+    """주장을 사건으로 묶는다. 기본값은 끝까지 묶는 것이다.
+
+    `limit` 은 화면용이다. 여기서 끊으면 나머지 주장은 어떤 사건에도 못
+    들어가고, 그 상태로 성능을 재면 묶는 방법이 아니라 끊은 숫자를 재게 된다.
+    """
     rows: list[tuple[str, nl.Newsletter, nl.Item]] = []
     for L in letters:
         d = nl._day(L)
@@ -222,7 +233,7 @@ def cluster(letters: list[nl.Newsletter], *, day: str | None = None) -> list[Eve
             adapter_verifiable=av,
             evidence=round(evidence, 2),
         ))
-        if len(events) >= EVENT_CAP:
+        if limit and len(events) >= limit:
             break
 
     events.sort(key=lambda e: (-e.confidence, e.day))

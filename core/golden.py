@@ -35,7 +35,7 @@ from . import claims as claims_mod
 ROOT = Path(__file__).resolve().parent.parent / "data" / "golden"
 SPLITS = ("dev", "holdout")
 
-LAYERS = ("blocks", "claims", "recall", "pairs", "topics")
+LAYERS = ("blocks", "claims", "recall", "cluster", "pairs", "topics")
 
 # 사건 쌍의 정답. 둘 중 하나로 강요하지 않는 이유는 core/events.py 참고.
 PAIR_LABELS = ("same_event", "related_theme", "unrelated")
@@ -152,6 +152,8 @@ def filled(layer: str, rows: list[dict]) -> list[dict]:
         return [r for r in rows if r.get("utility")]
     if layer == "recall":
         return [r for r in rows if r.get("reviewed")]
+    if layer == "cluster":
+        return [r for r in rows if r.get("event_group")]
     return annotated(rows)
 
 
@@ -258,6 +260,71 @@ def score_recall(rows: list[dict]) -> dict:
         "missed": missed,
         "recall": found / total if total else 0.0,
         "blocks_with_gaps": sum(1 for r in marked if r.get("missed")),
+    }
+
+
+def derive_pairs(rows: list[dict]) -> dict[tuple[str, str], str]:
+    """묶음 표시에서 모든 쌍의 정답을 끌어낸다.
+
+    쌍을 하나씩 묻는 것은 30개 주장에 435번이다. 사람이 못 한다.
+    그런데 사람 머릿속에서 일어나는 일은 쌍 판정이 아니라 **분류**다.
+    30개를 더미로 나누는 것은 30번의 결정이고, 거기서 435쌍의 답이 전부
+    따라 나온다. 같은 일을 O(n²) 대신 O(n) 으로 묻는 것이다.
+    """
+    marked = [r for r in rows if r.get("event_group")]
+    out = {}
+    for x in range(len(marked)):
+        for y in range(x + 1, len(marked)):
+            a, b = marked[x], marked[y]
+            key = tuple(sorted((a["id"], b["id"])))
+            if a["event_group"] == b["event_group"]:
+                out[key] = "same_event"
+            elif a.get("theme_group") and a.get("theme_group") == b.get("theme_group"):
+                out[key] = "related_theme"
+            else:
+                out[key] = "unrelated"
+    return out
+
+
+def score_retrieval_exhaustive(rows: list[dict]) -> dict:
+    """좁은 구간을 빠짐없이 훑어 찾기 재현율을 잰다.
+
+    기계가 올린 쌍만 정답지에 넣으면 재현율은 정의상 100% 가 된다.
+    놓친 쌍은 정답지에 존재조차 하지 않으니까. 그래서 한 구간만이라도
+    쌍의 전체 우주를 확보해야 한다.
+
+    구간 안의 주장을 사람이 더미로 나누면 그 안의 모든 쌍에 답이 생기고,
+    기계가 같은 사건에 넣었는지는 이미 알고 있으므로 바로 대조된다.
+    """
+    truth = derive_pairs(rows)
+    if not truth:
+        return {"n": 0}
+    where = {r["id"]: r.get("machine_event") for r in rows}
+
+    def together(key):
+        a, b = where.get(key[0]), where.get(key[1])
+        return a is not None and a == b
+
+    counts, hit, lost = {}, {}, []
+    for key, label in truth.items():
+        counts[label] = counts.get(label, 0) + 1
+        if together(key):
+            hit[label] = hit.get(label, 0) + 1
+        elif label == "same_event":
+            lost.append(key)
+
+    same = counts.get("same_event", 0)
+    machine_same = sum(1 for k in truth if together(k))
+    return {
+        "n": len(truth),
+        "claims": len([r for r in rows if r.get("event_group")]),
+        "counts": counts,
+        "same_event": same,
+        "found": hit.get("same_event", 0),
+        "recall": hit.get("same_event", 0) / same if same else 0.0,
+        "precision": hit.get("same_event", 0) / machine_same if machine_same else 0.0,
+        "over_merged": machine_same - hit.get("same_event", 0),
+        "lost": lost[:8],
     }
 
 
