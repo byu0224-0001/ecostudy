@@ -4,7 +4,7 @@
 
 이 저장소의 이전 프로젝트(투자 스터디 주제 선정·리서치 엔진)는 전부 제거했다. 지금부터는 이 도구만 다룬다.
 
-지금은 **구현 전 설계 단계**다. 코드를 쓰기 전에 형태, 데이터 경로, 폰에서 쓰는 방법을 먼저 고정한다.
+수집 엔진은 아직 없다. 세 갈래 의견을 비교한 결정과, 폰에서 읽는 리포트 시안은 있다. 시안은 예시 데이터다.
 
 ## 한 줄로
 
@@ -32,23 +32,24 @@
 | [docs/03-sources.md](docs/03-sources.md) | 유튜브·기사 수집의 공식/비공식 경로 |
 | [docs/04-mobile.md](docs/04-mobile.md) | 폰에서 쓰는 방법 |
 | [docs/05-roadmap.md](docs/05-roadmap.md) | 단계별 구현 순서 |
+| [docs/06-synthesis.md](docs/06-synthesis.md) | 세 의견 비교와 최종 결정 |
+| [docs/07-schema.md](docs/07-schema.md) | 주장·영상·쟁점 JSON |
+| [docs/08-report-ui.md](docs/08-report-ui.md) | 썸네일 카드와 리포트 배치 |
+| [design.md](design.md) | 화면 색, 글자, 모서리 |
+| [web/index.html](web/index.html) | 리포트 시안 |
 
-## 추천안 (혼자 쓸 때)
+## 결정
 
-1. **1차 인터페이스: 텔레그램 봇**  
-   폰에서 키워드를 보내고, 브리핑과 유튜브 딥링크를 바로 받는다.
-2. **2차 인터페이스: 모바일 PWA**  
-   같은 백엔드 위에 카드형 화면을 올린다. 홈 화면에 추가하면 앱처럼 쓴다.
-3. **수집 엔진**  
-   - 한국어 기사: 네이버 검색 API  
-   - 영문·구글 쪽: Google News RSS + Brave/Tavily 같은 검색 API  
-   - 유튜브 검색: 공식 Data API가 있으면 쓰고, 쿼터·자막은 개인용 비공식 경로로 보완  
-   - 자막: `youtube-transcript-api` / `yt-dlp`  
-   - 요약: Gemini 또는 Claude (긴 자막에 유리)
-4. **다양성 엔진을 검색보다 앞에 둔다**  
-   채널 중복 제한, 쿼리 확장, 한/영 병행, 스탠스 클러스터.
+자세한 비교는 [docs/06-synthesis.md](docs/06-synthesis.md).
 
-자세한 이유와 대안은 [docs/02-approaches.md](docs/02-approaches.md), 구현 순서는 [docs/05-roadmap.md](docs/05-roadmap.md)에 있다.
+1. **엔진은 파이썬.** n8n과 MCP는 본체가 아니다.
+2. **텔레그램은 리모컨, 리포트 페이지가 본편.** 썸네일과 쟁점 표는 메시지에 들어가지 않는다.
+3. **영상 카드**는 썸네일, 원제목, 키워드, 의견, 다른 점, 타임스탬프를 같이 보여 준다.
+4. **쟁점은 같은 명제에 양쪽 인용이 있을 때만** 만든다.
+5. 기사는 네이버와 Google News RSS. SerpApi·유료 자막 API는 기본 경로가 아니다.
+6. 자막이 없으면 그 영상은 건너뛴다.
+
+시안은 `web/index.html` 이다. 색과 모서리는 [design.md](design.md)를 따른다.
 
 ## 전제
 
