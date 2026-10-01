@@ -1,15 +1,13 @@
 .env
+.env.local
 __pycache__/
 *.pyc
 .venv/
 venv/
-
-# Fetched artifacts. The cache is reproducible from source, so it is not
-# committed; provenance sidecars under series/ are small and ARE committed
-# so a session stays auditable without re-fetching.
-cache/
-series/
+node_modules/
 .DS_Store
-
-# topics/seen.jsonl 은 일부러 무시하지 않는다. RSS 는 최근 것만 돌려주므로
-# 한 번 놓친 날은 영영 복구되지 않는다. 재현 불가능한 유일한 파일이다.
+data/cache/
+data/raw/
+*.log
+.idea/
+.vscode/
