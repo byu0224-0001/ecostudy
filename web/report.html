@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>미국 국채 금리 — Opinion Radar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Manrope:wght@800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html">Opinion Radar</a>
+      <nav class="nav-links" aria-label="주요">
+        <a href="index.html">검색</a>
+        <a href="history.html">기록</a>
+        <a href="report.html" aria-current="page">예시 리포트</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero-band">
+    <div class="wrap">
+      <p class="eyebrow">최근 30일 · 후보 36개 중 채택 4개</p>
+      <h1>미국 국채 금리</h1>
+      <p class="lede">기사 3편과 영상을 같은 명제로 붙여 두었다. 자막이 없는 영상 5개는 카드로 만들지 않았다.</p>
+      <p class="one-line">레벨에 대한 관측은 가깝고, 원인을 두는 명제가 갈린다.</p>
+      <p class="sample-pill">예시 데이터. 채널과 숫자는 수집 결과가 아니다.</p>
+    </div>
+  </section>
+
+  <section class="blind-spot">
+    <div class="wrap">
+      <h2>이번 목록이 일부러 벌린 관점</h2>
+      <p>조회수 상위만 모으면 재정 공급 이야기가 화면을 채운다. 이 시안은 하락 프레임 검색에서 온 경기 둔화 논리와, 영문 검색에서 온 텀 프리미엄 논리를 같은 자리에 둔다.</p>
+    </div>
+  </section>
+
+  <section class="section section-issues" aria-labelledby="issues-title">
+    <div class="wrap">
+      <h2 id="issues-title">어디가 갈리는가</h2>
+      <div class="issue-list">
+        <button class="issue-card" type="button" data-issue-filter="fiscal" aria-pressed="false">
+          <h3>재정과 국채 공급</h3>
+          <p class="proposition">국채 공급 증가가 장기금리의 주된 상승 압력인가.</p>
+          <dl class="sides">
+            <div class="side">
+              <dt>공급이 민다</dt>
+              <dd>입찰 커버리지와 발행 계획을 근거로 든다. 영상 1.</dd>
+            </div>
+            <div class="side">
+              <dt>둔화가 흡수한다</dt>
+              <dd>고용이 식으면 발행 물량도 금리에 안 남는다고 본다. 영상 2.</dd>
+            </div>
+          </dl>
+        </button>
+        <button class="issue-card" type="button" data-issue-filter="inflation" aria-pressed="false">
+          <h3>인플레이션 경로</h3>
+          <p class="proposition">물가가 다시 붙는 중인가, 이미 식는 중인가.</p>
+          <dl class="sides">
+            <div class="side">
+              <dt>아직 안 식었다</dt>
+              <dd>서비스 물가를 이유로 고금리 장기화를 말한다. 영상 1, 칼럼.</dd>
+            </div>
+            <div class="side">
+              <dt>수요가 꺾인다</dt>
+              <dd>실질소득 둔화를 먼저 본다. 영상 2, 뉴스.</dd>
+            </div>
+          </dl>
+        </button>
+        <button class="issue-card" type="button" data-issue-filter="term" aria-pressed="false">
+          <h3>텀 프리미엄</h3>
+          <p class="proposition">지금 레벨의 설명은 기준금리 경로인가, 기간 프리미엄인가.</p>
+          <dl class="sides">
+            <div class="side">
+              <dt>프리미엄이 본체</dt>
+              <dd>연준 점 경로보다 보상 요구를 본다. 영상 3.</dd>
+            </div>
+            <div class="side">
+              <dt>경로가 본체</dt>
+              <dd>같은 레벨을 인하 시점의 함수로 읽는다. 영상 4.</dd>
+            </div>
+          </dl>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-videos" id="videos" aria-labelledby="videos-title">
+    <div class="wrap">
+      <h2 id="videos-title">영상</h2>
+      <div class="filters" role="group" aria-label="방향 필터">
+        <button class="chip" type="button" data-stance-filter="all" aria-pressed="true">전체</button>
+        <button class="chip" type="button" data-stance-filter="up" aria-pressed="false">상승 압력</button>
+        <button class="chip" type="button" data-stance-filter="down" aria-pressed="false">하락 압력</button>
+        <button class="chip" type="button" data-stance-filter="range" aria-pressed="false">범위·구조</button>
+      </div>
+      <p class="count-line">보이는 영상 <span id="video-count">4</span>개. 쟁점을 누르면 그 명제만 남는다.</p>
+      <p class="empty" id="video-empty" hidden>이 조합에 해당하는 영상이 없다. 전체로 되돌리면 다시 보인다.</p>
+      <div class="video-list">
+        <article class="video-card" data-stance="up" data-issues="fiscal inflation">
+          <a class="thumb" href="https://www.youtube.com/results?search_query=%EB%AF%B8%EA%B5%AD+%EA%B5%AD%EC%B1%84+%EA%B8%88%EB%A6%AC" target="_blank" rel="noopener noreferrer">
+            <img src="thumbs/fiscal.svg" alt="">
+            <span class="play" aria-hidden="true"></span>
+            <span class="duration">18:24</span>
+          </a>
+          <div>
+            <div class="card-kicker">
+              <span class="badge">상승 압력</span>
+              <span>커브 노트 · 예시</span>
+              <time datetime="2026-09-28">9월 28일</time>
+            </div>
+            <h3>장기금리는 재정이다. 입찰이 말해 주는 것</h3>
+            <ul class="keywords">
+              <li>재정 적자</li>
+              <li>국채 공급</li>
+              <li>텀 프리미엄</li>
+            </ul>
+            <p class="summary">발행이 늘어 장기물에 물량이 남고, 그 부담이 금리에 선반영된다고 본다. 경기 침체가 깊어지지 않는다는 전제 위에서 6~12개월 상승을 말한다. 출처의 해석은 장기채 가격에 불리하다는 쪽이다.</p>
+            <div class="delta">
+              <span class="delta-label">다른 영상과 다른 점</span>
+              <p>고용이나 연준 성명보다 입찰 커버리지를 직접 근거로 든다. 영상 2가 같은 발행을 두고 “둔화가 흡수한다”고 말하는 지점과 부딪힌다.</p>
+            </div>
+            <blockquote class="quote">
+              <a class="stamp" href="https://www.youtube.com/results?search_query=%EB%AF%B8%EA%B5%AD+%EA%B5%AD%EC%B1%84+%EA%B8%88%EB%A6%AC" target="_blank" rel="noopener noreferrer">03:41</a>
+              <p>“장기 금리 상승의 핵심은 재정적자라고 봅니다.”</p>
+            </blockquote>
+            <a class="button-primary" href="https://www.youtube.com/results?search_query=%EB%AF%B8%EA%B5%AD+%EA%B5%AD%EC%B1%84+%EA%B8%88%EB%A6%AC" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>
+          </div>
+        </article>
+
+        <article class="video-card" data-stance="down" data-issues="fiscal inflation">
+          <a class="thumb" href="https://www.youtube.com/results?search_query=US+10-year+yield+outlook" target="_blank" rel="noopener noreferrer">
+            <img src="thumbs/growth.svg" alt="">
+            <span class="play" aria-hidden="true"></span>
+            <span class="duration">22:05</span>
+          </a>
+          <div>
+            <div class="card-kicker">
+              <span class="badge">하락 압력</span>
+              <span>레이트 데스크 · 예시</span>
+              <time datetime="2026-09-27">9월 27일</time>
+            </div>
+            <h3>시장은 둔화를 아직 가격에 안 넣었다</h3>
+            <ul class="keywords">
+              <li>고용 둔화</li>
+              <li>실질소득</li>
+              <li>완화 경로</li>
+            </ul>
+            <p class="summary">수요가 식는 속도가 물가보다 빠르다는 쪽이다. 인플레이션이 안정된다는 전제가 필요하고, 시계는 약 6개월이다. 출처의 해석은 장기채 가격에 유리하다는 쪽이다.</p>
+            <div class="delta">
+              <span class="delta-label">다른 영상과 다른 점</span>
+              <p>공급 물량을 부정하지 않는다. 다만 그 물량이 금리에 남는다는 영상 1의 연결을 거부하고, 수요 둔화를 더 큰 항으로 둔다.</p>
+            </div>
+            <blockquote class="quote">
+              <a class="stamp" href="https://www.youtube.com/results?search_query=US+10-year+yield+outlook" target="_blank" rel="noopener noreferrer">11:02</a>
+              <p>“발행이 많아도, 수요가 꺼지면 금리는 그 물량을 다 반영하지 않습니다.”</p>
+            </blockquote>
+            <a class="button-primary" href="https://www.youtube.com/results?search_query=US+10-year+yield+outlook" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>
+          </div>
+        </article>
+
+        <article class="video-card" data-stance="structural" data-issues="term">
+          <a class="thumb" href="https://www.youtube.com/results?search_query=term+premium+treasury" target="_blank" rel="noopener noreferrer">
+            <img src="thumbs/premium.svg" alt="">
+            <span class="play" aria-hidden="true"></span>
+            <span class="duration">14:48</span>
+          </a>
+          <div>
+            <div class="card-kicker">
+              <span class="badge">구조</span>
+              <span>피스크 매크로 · 예시</span>
+              <time datetime="2026-09-25">9월 25일</time>
+            </div>
+            <h3>연준 점도표보다 텀 프리미엄</h3>
+            <ul class="keywords">
+              <li>텀 프리미엄</li>
+              <li>보상 요구</li>
+              <li>기준금리 경로</li>
+            </ul>
+            <p class="summary">지금 10년물 레벨의 설명 변수로 다음 인하 시점보다 기간 프리미엄을 앞에 둔다. 방향 예측은 조건부로만 말하고, 레벨의 구성이 바뀌었다는 주장에 가깝다.</p>
+            <div class="delta">
+              <span class="delta-label">다른 영상과 다른 점</span>
+              <p>상승이냐 하락이냐를 먼저 말하지 않는다. 영상 1과 2가 방향을 다투는 동안, 이 영상은 그 방향의 담지 자체를 다른 변수로 옮긴다.</p>
+            </div>
+            <blockquote class="quote">
+              <a class="stamp" href="https://www.youtube.com/results?search_query=term+premium+treasury" target="_blank" rel="noopener noreferrer">06:18</a>
+              <p>“금리가 오른 이유를 연준 발언에서만 찾으면 기간 프리미엄을 놓칩니다.”</p>
+            </blockquote>
+            <a class="button-primary" href="https://www.youtube.com/results?search_query=term+premium+treasury" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>
+          </div>
+        </article>
+
+        <article class="video-card" data-stance="range" data-issues="term">
+          <a class="thumb" href="https://www.youtube.com/results?search_query=%EB%AF%B8%EA%B5%AD+%EC%9E%A5%EA%B8%B0%EA%B8%88%EB%A6%AC+%EC%A0%84%EB%A7%9D" target="_blank" rel="noopener noreferrer">
+            <img src="thumbs/range.svg" alt="">
+            <span class="play" aria-hidden="true"></span>
+            <span class="duration">09:36</span>
+          </a>
+          <div>
+            <div class="card-kicker">
+              <span class="badge">범위</span>
+              <span>오크 캐피탈 · 예시</span>
+              <time datetime="2026-09-23">9월 23일</time>
+            </div>
+            <h3>박스권이면 매매가 아니라 만기다</h3>
+            <ul class="keywords">
+              <li>레인지</li>
+              <li>만기 보유</li>
+              <li>이벤트 주간</li>
+            </ul>
+            <p class="summary">큰 방향보다 박스 상하단을 먼저 말한다. CPI와 입찰이 박스를 깨지 않으면 금리 레벨 베팅의 보상이 작다는 해석이다. 전망 시계는 이번 이벤트 구간이다.</p>
+            <div class="delta">
+              <span class="delta-label">다른 영상과 다른 점</span>
+              <p>재정이나 고용을 부정하지 않고, 그 논쟁이 이미 가격에 들어 있다고 본다. 방향을 고르는 영상들과 달리 포지션의 크기부터 줄이자고 말한다.</p>
+            </div>
+            <blockquote class="quote">
+              <a class="stamp" href="https://www.youtube.com/results?search_query=%EB%AF%B8%EA%B5%AD+%EC%9E%A5%EA%B8%B0%EA%B8%88%EB%A6%AC+%EC%A0%84%EB%A7%9D" target="_blank" rel="noopener noreferrer">02:14</a>
+              <p>“방향이 틀린 게 아니라, 박스가 깨지기 전에는 그 방향의 값이 작습니다.”</p>
+            </blockquote>
+            <a class="button-primary" href="https://www.youtube.com/results?search_query=%EB%AF%B8%EA%B5%AD+%EC%9E%A5%EA%B8%B0%EA%B8%88%EB%A6%AC+%EC%A0%84%EB%A7%9D" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-articles" aria-labelledby="articles-title">
+    <div class="wrap">
+      <h2 id="articles-title">기사와 칼럼</h2>
+      <div class="article-list">
+        <article class="article-card">
+          <div class="card-kicker">
+            <span class="badge">뉴스</span>
+            <span>예시 통신</span>
+            <time datetime="2026-09-29">9월 29일</time>
+          </div>
+          <h3>10년물, 입찰 이후 박스 상단</h3>
+          <ul class="keywords">
+            <li>입찰</li>
+            <li>10년물</li>
+          </ul>
+          <p class="summary">사실로 읽는 부분은 입찰 이후의 레벨이다. 원인을 재정으로 단정하지 않고, 다음 CPI를 확인 지점으로 둔다. 영상 1이 같은 입찰을 상승 논거로 쓰는 것과 세기가 다르다.</p>
+        </article>
+        <article class="article-card">
+          <div class="card-kicker">
+            <span class="badge badge-column">칼럼</span>
+            <span>예시 칼럼</span>
+            <time datetime="2026-09-26">9월 26일</time>
+          </div>
+          <h3>공급 걱정은 실물보다 한 박자 빠르다</h3>
+          <ul class="keywords">
+            <li>발행 계획</li>
+            <li>수요</li>
+          </ul>
+          <p class="summary">발행 증가라는 사실은 인정하고, 그것이 바로 금리 상승이라는 해석은 보류한다. 영상 2의 둔화 논리와 같은 편이고, 영상 1의 그 연결은 아직 이르다고 본다.</p>
+        </article>
+        <article class="article-card">
+          <div class="card-kicker">
+            <span class="badge">1차</span>
+            <span>예시 재무 일정</span>
+            <time datetime="2026-09-22">9월 22일</time>
+          </div>
+          <h3>이번 주 발행과 입찰 일정</h3>
+          <ul class="keywords">
+            <li>입찰 일정</li>
+            <li>발행 한도</li>
+          </ul>
+          <p class="summary">의견이 없는 자료다. 날짜와 규모만 있다. 영상들이 말하는 공급의 크기를 여기서 대조한다. 전망 문장은 없다.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>카드의 투자 함의는 그 출처의 말이다. 이 리포트의 매수·매도 의견이 아니다. 인용이 원문에서 다시 확인되지 않은 문장은 들어가지 않는다.</p>
+    </div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

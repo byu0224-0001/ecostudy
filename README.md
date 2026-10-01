@@ -4,7 +4,7 @@
 
 이 저장소의 이전 프로젝트(투자 스터디 주제 선정·리서치 엔진)는 전부 제거했다. 지금부터는 이 도구만 다룬다.
 
-수집 엔진은 아직 없다. 세 갈래 의견을 비교한 결정과, 폰에서 읽는 리포트 시안은 있다. 시안은 예시 데이터다.
+검색부터 기록까지 같은 화면 기준으로 붙어 있고, CLI가 그 리포트와 같은 JSON을 만든다. `web/report.html`의 채널과 숫자는 예시이고, 실행 결과는 수집한 인용만 담는다.
 
 ## 한 줄로
 
@@ -36,7 +36,8 @@
 | [docs/07-schema.md](docs/07-schema.md) | 주장·영상·쟁점 JSON |
 | [docs/08-report-ui.md](docs/08-report-ui.md) | 썸네일 카드와 리포트 배치 |
 | [design.md](design.md) | 화면 색, 글자, 모서리 |
-| [web/index.html](web/index.html) | 리포트 시안 |
+| [docs/09-screens.md](docs/09-screens.md) | 검색, 수집, 리포트, 기록, 빈 결과 |
+| [web/index.html](web/index.html) | 검색 화면 |
 
 ## 결정
 
@@ -49,7 +50,16 @@
 5. 기사는 네이버와 Google News RSS. SerpApi·유료 자막 API는 기본 경로가 아니다.
 6. 자막이 없으면 그 영상은 건너뛴다.
 
-시안은 `web/index.html` 이다. 색과 모서리는 [design.md](design.md)를 따른다.
+화면은 [design.md](design.md)의 색, 모서리, Manrope, Inter를 따른다. 검색은 `web/index.html`, 예시 리포트는 `web/report.html`이다.
+
+```bash
+pip install -r requirements.txt
+python -m radar doctor
+python -m radar brief "미국 국채 금리" --days 14 --html data/report.html
+python -m radar serve
+```
+
+`serve`를 켠 뒤 검색 화면에서 키워드를 실행하면 리포트로 넘어간다. 네이버, 유튜브 공식 검색, Gemini 키가 없으면 그 경로만 건너뛰고 Google News와 yt-dlp는 그대로 시도한다.
 
 ## 전제
 
