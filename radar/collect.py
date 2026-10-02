@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 import urllib.parse
@@ -198,6 +199,88 @@ def fetch_caption_segments(video_id: str) -> list[dict] | None:
         start = getattr(item, "start", None)
         segments.append({"text": text, "start": start})
     return segments or None
+
+
+def html_to_text(html: str) -> str:
+    cleaned = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", html or "")
+    cleaned = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", cleaned)
+    for pattern in (
+        r'(?is)<[^>]+itemprop=["\']articleBody["\'][^>]*>(.{200,20000})',
+        r'(?is)<(?:div|section|article)[^>]+class=["\'][^"\']*article-body[^"\']*["\'][^>]*>(.{200,20000})',
+        r'(?is)<article[^>]*>(.{200,20000})</article>',
+    ):
+        match = re.search(pattern, cleaned)
+        if not match:
+            continue
+        text = _strip_byline(strip_html(match.group(1))[:3500])
+        if len(text) >= 180:
+            return text
+    paragraphs = [strip_html(part) for part in re.findall(r"(?is)<p[^>]*>(.*?)</p>", cleaned)]
+    paragraphs = [part for part in paragraphs if len(part) >= 40]
+    if len(" ".join(paragraphs)) >= 180:
+        return _strip_byline(" ".join(paragraphs)[:3500])
+    return _strip_byline(strip_html(cleaned)[:3500])
+
+
+def _strip_byline(text: str) -> str:
+    return re.sub(r"\([^)]{0,40}\)\s*[가-힣A-Za-z ]{0,16}기자\s*=\s*", "", text).strip()
+
+
+def page_title(html: str) -> str:
+    match = re.search(r"(?is)<title[^>]*>(.*?)</title>", html or "")
+    if not match:
+        return ""
+    title = strip_html(match.group(1))
+    return re.split(r"\s+[|\-–—<]\s*", title)[0].strip()
+
+
+def published_in_html(html: str) -> str:
+    match = re.search(r'"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})', html or "")
+    return match.group(1) if match else ""
+
+
+def articles_from_pages(links: list[dict], fetch_html, limit: int = 4) -> tuple[list[dict], list[str]]:
+    articles = []
+    failures = 0
+    for link in links:
+        if len(articles) >= limit:
+            break
+        url = (link.get("url") or "").strip()
+        if not url.startswith("https://"):
+            continue
+        try:
+            final_url, html = fetch_html(url)
+            text = html_to_text(html)
+        except Exception:
+            failures += 1
+            continue
+        if len(text) < 180:
+            failures += 1
+            continue
+        title = page_title(html) or (link.get("title") or "").strip() or final_url
+        host = urllib.parse.urlparse(final_url).netloc.removeprefix("www.")
+        articles.append({
+            "title": title,
+            "publisher": host or (link.get("title") or "").strip() or "웹",
+            "canonical_url": final_url or url,
+            "published_at": published_in_html(html),
+            "section": "column" if any(word in title for word in ("칼럼", "오피니언", "사설")) else "news",
+            "text": text,
+        })
+    skipped = []
+    if failures and not articles:
+        skipped.append("article_body: 본문을 열지 못함")
+    elif failures:
+        skipped.append(f"article_body: 본문 확인 실패 {failures}건")
+    return articles, skipped
+
+
+def fetch_article_html(url: str) -> tuple[str, str]:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        final_url = response.geturl()
+        raw = response.read(400_000)
+    return final_url, raw.decode("utf-8", "replace")
 
 
 def collect_articles(keyword: str, days: int, settings: Settings, queries: list[str]) -> tuple[list[dict], list[str]]:

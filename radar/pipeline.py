@@ -309,7 +309,10 @@ def build_brief(
         ready_videos.append(finished)
 
     if captions_missing:
-        skipped.append(f"youtube_captions: 자막을 가져오지 못함 {captions_missing}개")
+        if getattr(caption_fn, "reason", "") == "blocked":
+            skipped.append(f"youtube_captions: 유튜브가 이 네트워크의 자막 요청을 막아 {captions_missing}개를 건너뜀")
+        else:
+            skipped.append(f"youtube_captions: 자막을 가져오지 못함 {captions_missing}개")
     apply_deltas(ready_videos)
     sources = ready_videos + ready_articles
     issues = build_issues(sources)

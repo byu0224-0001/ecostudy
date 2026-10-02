@@ -1,3 +1,4 @@
+import html
 import re
 
 STANCE_UP = ("상승", "인상", "매도", "부담", "급등")
@@ -40,13 +41,27 @@ def quote_status(quote: str, source: str) -> str:
 def keep_grounded(claims: list[dict], source: str) -> list[dict]:
     kept = []
     for claim in claims:
-        status = quote_status(claim.get("quote") or "", source)
+        quote = claim.get("quote") or ""
+        status = quote_status(quote, source)
         if status == "missing":
             continue
         copied = dict(claim)
         copied["quote_status"] = status
+        if status == "fuzzy":
+            copied["quote"] = aligned_quote(quote, source)
         kept.append(copied)
     return kept
+
+
+def aligned_quote(quote: str, source: str) -> str:
+    folded = compact(quote)
+    if not folded:
+        return quote
+    for sentence in split_sentences(source):
+        folded_sentence = compact(sentence)
+        if folded in folded_sentence or folded_sentence in folded:
+            return sentence
+    return quote
 
 
 def split_sentences(text: str) -> list[str]:
@@ -96,12 +111,4 @@ def keywords_in(text: str) -> list[str]:
 
 def strip_html(value: str) -> str:
     text = re.sub(r"<[^>]+>", " ", value or "")
-    text = (
-        text.replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", '"')
-        .replace("&#39;", "'")
-    )
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()

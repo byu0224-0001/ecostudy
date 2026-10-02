@@ -3,6 +3,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from radar.collect import articles_from_pages, html_to_text
+from radar.extract import grounding_links
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
 from radar.textutil import keep_grounded, quote_status
@@ -20,6 +22,13 @@ class GroundTests(unittest.TestCase):
         self.assertEqual(kept[0]["quote_status"], "exact")
         self.assertEqual(quote_status("국채  금리는 공급 부담으로 오른다.", source), "fuzzy")
         self.assertEqual(quote_status("없는 말", source), "missing")
+        fuzzy_source = "10년물 국채금리와 금리 인상 가능성이 낮아졌다. 다른 문장도 있다."
+        fuzzy = keep_grounded(
+            [{"quote": "10년물 국채금리 와 금리 인상 가능성 이 낮아졌다", "opinion": "하락", "stance": "down"}],
+            fuzzy_source,
+        )
+        self.assertEqual(fuzzy[0]["quote_status"], "fuzzy")
+        self.assertEqual(fuzzy[0]["quote"], "10년물 국채금리와 금리 인상 가능성이 낮아졌다.")
 
 
 class PipelineTests(unittest.TestCase):
@@ -143,6 +152,42 @@ class HtmlFileTests(unittest.TestCase):
         self.assertIn("video-card", report)
         self.assertIn("다른 영상과 다른 점", report)
         self.assertNotIn("json.loads", report)
+
+
+class ArticleBodyTests(unittest.TestCase):
+    def test_paragraphs_become_text_and_short_pages_are_dropped(self):
+        html = "<html><title>금리 칼럼 | 신문</title><p>" + ("국채 발행이 늘어 금리는 상승 압력이 있다. " * 8) + "</p></html>"
+        self.assertIn("상승 압력", html_to_text(html))
+        links = [{"title": "news.example", "url": "https://news.example/a"}, {"title": "short", "url": "https://news.example/b"}]
+
+        def fetch(url):
+            if url.endswith("/b"):
+                return url, "<html><title>짧음</title><p>한 줄.</p></html>"
+            return "https://news.example/a", html
+
+        articles, skipped = articles_from_pages(links, fetch, limit=4)
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["publisher"], "news.example")
+        self.assertEqual(articles[0]["section"], "column")
+        self.assertIn("본문 확인 실패", skipped[0])
+        sidebar = "<p>" + ("사이드 금리 상승 압력 문장입니다. " * 8) + "</p>"
+        body = "<div class=\"article-body\" itemprop=\"articleBody\">" + ("미국 30년 만기 국채금리가 최고치를 경신했다. " * 8) + "</div>"
+        text = html_to_text(sidebar + body)
+        self.assertIn("최고치를 경신", text)
+        self.assertNotIn("사이드", text)
+        byline = "<div class=\"article-body\">" + ("(서울=연합뉴스) 김가 기자 = 국채 발행이 늘어 금리는 상승 압력이 있다. " * 6) + "</div>"
+        self.assertNotIn("기자", html_to_text(byline))
+        self.assertIn("상승 압력", html_to_text(byline))
+
+    def test_grounding_keeps_https_chunks_only(self):
+        payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
+            {"web": {"uri": "https://news.example/a", "title": "예"}},
+            {"web": {"uri": "http://news.example/b", "title": "버림"}},
+            {"web": {"uri": "https://news.example/a", "title": "중복"}},
+        ]}}]}
+        links = grounding_links(payload)
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0]["url"], "https://news.example/a")
 
 
 if __name__ == "__main__":
