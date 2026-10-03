@@ -10,6 +10,8 @@ class Settings:
     youtube_key: str
     gemini_key: str
     gemini_model: str
+    google_key: str
+    google_cx: str
     root: Path
 
     @property
@@ -19,6 +21,10 @@ class Settings:
     @property
     def youtube_ready(self) -> bool:
         return bool(self.youtube_key)
+
+    @property
+    def google_ready(self) -> bool:
+        return bool(self.google_key and self.google_cx)
 
 
 def load_env_file(path: Path) -> None:
@@ -41,6 +47,8 @@ def load_settings(root: Path | None = None) -> Settings:
         youtube_key=os.environ.get("YOUTUBE_API_KEY", "").strip(),
         gemini_key=os.environ.get("GEMINI_API_KEY", "").strip(),
         gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash",
+        google_key=os.environ.get("GOOGLE_CSE_KEY", "").strip(),
+        google_cx=os.environ.get("GOOGLE_CSE_CX", "").strip(),
         root=root,
     )
 
@@ -53,4 +61,6 @@ def missing_key_names(settings: Settings) -> list[str]:
         missing.append("YOUTUBE_API_KEY")
     if not settings.gemini_key:
         missing.append("GEMINI_API_KEY")
+    if not settings.google_ready:
+        missing.append("GOOGLE_CSE_KEY / GOOGLE_CSE_CX")
     return missing

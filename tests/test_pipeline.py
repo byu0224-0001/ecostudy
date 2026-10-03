@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from radar.collect import articles_from_pages, html_to_text, page_title, select_naver_links
+from radar.collect import articles_from_pages, html_to_text, mix_topic_links, page_title, parse_google_cse, select_naver_links
 from radar.extract import grounding_links
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
@@ -138,8 +138,10 @@ class PipelineTests(unittest.TestCase):
     def test_expand_splits_frames(self):
         queries = expand_queries("미국 국채 금리")
         self.assertIn("미국 국채 금리 상승", queries)
-        self.assertIn("미국 국채 금리 하락", queries)
+        self.assertIn("미국 국채 금리 칼럼", queries)
+        self.assertIn("미국 국채 금리 재정", queries)
         self.assertIn("US treasury yield", queries)
+        self.assertLessEqual(len(queries), 8)
 
 
 class HtmlFileTests(unittest.TestCase):
@@ -216,6 +218,92 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertNotIn("https://d.example/4", urls)
         self.assertNotIn("https://e.example/5", urls)
         self.assertNotIn("https://f.example/6", urls)
+        duplicated = select_naver_links(
+            items + [{
+                "title": "떨어지는 칼날 美 국채 5% 재송고",
+                "canonical_url": "https://c.example/9",
+                "published_at": "2026-10-03",
+                "text": "미국 국채 금리",
+            }],
+            "미국 국채 금리",
+            14,
+            now,
+        )
+        dup_urls = [item["canonical_url"] for item in duplicated]
+        self.assertIn("https://c.example/3", dup_urls)
+        self.assertNotIn("https://c.example/9", dup_urls)
+        crowded = [
+            {"title": f"미국 국채 금리 기사 {index}", "canonical_url": f"https://a.example/{index}", "published_at": "2026-10-03", "text": "미국 국채 금리"}
+            for index in range(6)
+        ]
+        column = [{"title": "재정 칼럼 미국 국채", "canonical_url": "https://b.example/column", "published_at": "2026-10-02", "text": "미국 국채 금리 재정"}]
+        mixed = [item["canonical_url"] for item in mix_topic_links([crowded, column], "미국 국채 금리", 14, now, limit=4)]
+        self.assertEqual(mixed[1], "https://b.example/column")
+
+    def test_google_cse_keeps_article_links(self):
+        payload = {"items": [
+            {"title": "Treasury yields rise", "link": "https://www.ft.com/content/abc", "snippet": "Fiscal supply lifts yields."},
+            {"title": "영상", "link": "https://www.youtube.com/watch?v=abc", "snippet": "영상"},
+            {"title": "같은 기사", "link": "https://www.ft.com/content/abc", "snippet": "중복은 파서가 그대로 둔다"},
+        ]}
+        links = parse_google_cse(payload)
+        self.assertEqual(len(links), 2)
+        self.assertEqual(links[0]["canonical_url"], "https://www.ft.com/content/abc")
+        self.assertEqual(links[0]["publisher"], "ft.com")
+
+    def test_same_direction_still_splits_the_point(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        articles = [
+            {
+                "title": "공급이 민다",
+                "publisher": "한겨레",
+                "canonical_url": "https://example.test/fiscal",
+                "published_at": "2026-09-28",
+                "section": "column",
+                "text": "국채 발행이 늘어 금리는 상승 압력이 있다.",
+            },
+            {
+                "title": "물가가 민다",
+                "publisher": "매경",
+                "canonical_url": "https://example.test/prices",
+                "published_at": "2026-09-27",
+                "section": "news",
+                "text": "물가가 높아 금리는 상승 압력이 있다. 국채 발행도 함께 늘었다.",
+            },
+        ]
+        report = build_brief("미국 국채 금리", articles=articles, videos=[], caption_fn=lambda _id: None, now=now)
+        self.assertTrue(any(issue["status"] == "distinct" for issue in report["issues"]))
+        self.assertTrue(all(article.get("delta") for article in report["articles"]))
+        page = render_report(report, "")
+        self.assertIn("다른 글과 다른 점", page)
+        self.assertIn("공급이 민다", page)
+        self.assertIn("물가가 민다", page)
+        split = build_brief(
+            "미국 국채 금리",
+            articles=[
+                {
+                    "title": "연준 경로",
+                    "publisher": "한경",
+                    "canonical_url": "https://example.test/fed",
+                    "published_at": "2026-09-28",
+                    "section": "news",
+                    "text": "기준금리를 올려 금리는 상승 압력이 있다.",
+                },
+                {
+                    "title": "발행 경로",
+                    "publisher": "매경",
+                    "canonical_url": "https://example.test/supply",
+                    "published_at": "2026-09-27",
+                    "section": "column",
+                    "text": "국채 발행이 늘어 금리는 상승 압력이 있다.",
+                },
+            ],
+            videos=[],
+            caption_fn=lambda _id: None,
+            now=now,
+        )
+        self.assertTrue(any(issue["id"] == "points" for issue in split["issues"]))
+        self.assertEqual(split["one_line"], "출처마다 짚는 문장이 다르다.")
 
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [

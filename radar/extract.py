@@ -32,7 +32,8 @@ def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
         "아래 원문에서 금융 의견만 JSON으로 뽑아라. "
         "quote는 원문에 있는 문장을 한 글자도 바꾸지 말고 복사한다. "
         "원문에 없는 문장은 만들지 말고 claims를 비운다. "
-        "stance는 up, down, range, structural, unknown 중 하나다.\n"
+        "stance는 up, down, range, structural, unknown 중 하나다. "
+        "opinion은 quote의 포인트를 40자 안으로 줄인 말이다. quote에 없는 사실은 넣지 않는다.\n"
         '{"claims":[{"quote":"","fact":"","interpretation":"","opinion":"","forecast":"","implication":"","evidence":[],"assumptions":[],"stance":"unknown"}]}\n\n'
         f"원문:\n{excerpt}"
     )
