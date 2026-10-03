@@ -7,6 +7,7 @@ from radar.textutil import (
     TOPICS,
     TOPIC_WORDS,
     STANCE_WORDS,
+    compact,
     keep_grounded,
     keywords_in,
     split_sentences,
@@ -48,11 +49,14 @@ def within_window(value: str | None, days: int, now: datetime) -> bool:
 
 
 def expand_queries(keyword: str) -> list[str]:
-    queries = [keyword, f"{keyword} 상승", f"{keyword} 하락"]
+    angles = ("칼럼", "재정", "물가", "연준", "상승", "하락")
     aliases = {
-        "미국 국채 금리": ["US treasury yield", "10-year treasury yield"],
+        "미국 국채 금리": ["US treasury yield", "treasury supply"],
         "원달러": ["USD KRW"],
     }
+    queries = [keyword]
+    for angle in angles:
+        queries.append(f"{keyword} {angle}".strip())
     queries.extend(aliases.get(keyword, []))
     if keyword.isascii():
         queries.append(f"{keyword} outlook")
@@ -61,7 +65,7 @@ def expand_queries(keyword: str) -> list[str]:
         cleaned = query.strip()
         if cleaned and cleaned not in unique:
             unique.append(cleaned)
-    return unique[:6]
+    return unique[:8]
 
 
 def heuristic_claims(text: str, segments: list[dict] | None = None) -> list[dict]:
@@ -148,6 +152,17 @@ def select_diverse(items: list[dict], *, limit: int, id_key: str, group_key: str
     return kept
 
 
+def _point(source: dict) -> str:
+    claim = next((item for item in source.get("claims") or [] if item.get("opinion") or item.get("quote")), None)
+    text = ""
+    if claim:
+        text = (claim.get("opinion") or claim.get("quote") or "").strip()
+    text = re.sub(r"\s+", " ", text)
+    if len(text) > 80:
+        text = text[:79].rstrip() + "…"
+    return text
+
+
 def build_issues(sources: list[dict]) -> list[dict]:
     issues = []
     ups = [source for source in sources if source["stance"] == "up"]
@@ -169,7 +184,7 @@ def build_issues(sources: list[dict]) -> list[dict]:
             blob = " ".join(claim.get("quote") or "" for claim in source["claims"])
             if any(word.lower() in blob.lower() for word in words):
                 matched.append(source)
-        if not matched:
+        if len(matched) < 2:
             continue
         ups = [source for source in matched if source["stance"] == "up"]
         downs = [source for source in matched if source["stance"] == "down"]
@@ -179,12 +194,22 @@ def build_issues(sources: list[dict]) -> list[dict]:
                 {"label": "상승 압력", "source_ids": [source["id"] for source in ups], "quote_ok": True},
                 {"label": "하락 압력", "source_ids": [source["id"] for source in downs], "quote_ok": True},
             ]
-        elif len(matched) >= 2 and len({source["stance"] for source in matched}) == 1:
-            status = "consensus"
-            side_label = STANCE_LABEL.get(matched[0]["stance"], "확인된 인용")
-            sides = [{"label": side_label, "source_ids": [source["id"] for source in matched], "quote_ok": True}]
         else:
-            continue
+            seen = set()
+            sides = []
+            for source in matched:
+                point = _point(source)
+                key = compact(point)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                sides.append({"label": point, "source_ids": [source["id"]], "quote_ok": True})
+            if len(sides) >= 2:
+                status = "distinct"
+            else:
+                status = "consensus"
+                side_label = STANCE_LABEL.get(matched[0]["stance"], "확인된 인용")
+                sides = [{"label": side_label, "source_ids": [source["id"] for source in matched], "quote_ok": True}]
         issues.append({
             "id": topic_id,
             "label": label,
@@ -195,24 +220,52 @@ def build_issues(sources: list[dict]) -> list[dict]:
     return issues
 
 
-def apply_deltas(videos: list[dict]) -> None:
-    for video in videos:
-        opposite = next(
-            (
-                other
-                for other in videos
-                if other["id"] != video["id"]
-                and {video["stance"], other["stance"]} == {"up", "down"}
-            ),
-            None,
-        )
-        if opposite is None:
-            video["delta"] = ""
+def _delta_label(source: dict, other: dict) -> str:
+    source_video = str(source.get("id") or "").startswith("yt_")
+    other_video = str(other.get("id") or "").startswith("yt_")
+    if source_video and other_video:
+        return "다른 영상과 다른 점"
+    if not source_video and not other_video:
+        return "다른 글과 다른 점"
+    return "다른 출처와 다른 점"
+
+
+def apply_deltas(sources: list[dict]) -> None:
+    for source in sources:
+        other = _contrast_with(source, sources)
+        if other is None or not _point(source) or not _point(other):
+            source["delta"] = ""
+            source["delta_label"] = ""
             continue
-        video["delta"] = (
-            f"「{opposite['title']}」은 {STANCE_LABEL[opposite['stance']]}으로 인용된다. "
-            f"이 영상은 {STANCE_LABEL[video['stance']]}으로 인용된다."
+        kind = "이 영상은" if str(source.get("id") or "").startswith("yt_") else "이 글은"
+        source["delta"] = (
+            f"「{other.get('title') or '다른 출처'}」은 {_point(other)} "
+            f"{kind} {_point(source)}"
         )
+        source["delta_label"] = _delta_label(source, other)
+
+
+def _contrast_with(source: dict, sources: list[dict]) -> dict | None:
+    others = [item for item in sources if item.get("id") != source.get("id")]
+    if not others:
+        return None
+    mine = set(source.get("issues") or [])
+    my_point = compact(_point(source))
+
+    def rank(item: dict) -> tuple:
+        opposite = {source.get("stance"), item.get("stance")} == {"up", "down"}
+        same_point = compact(_point(item)) == my_point
+        same_topic = bool(mine & set(item.get("issues") or []))
+        return (not opposite, same_point, not same_topic)
+
+    pool = others
+
+    pool.sort(key=rank)
+    best = pool[0]
+    same_topics = mine == set(best.get("issues") or [])
+    if compact(_point(best)) == my_point and same_topics:
+        return None
+    return best
 
 
 def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> str:
@@ -220,7 +273,9 @@ def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> st
         return "인용으로 확인할 문장이 없다."
     if any(issue["status"] == "conflict" for issue in issues):
         return "확인된 인용 안에서 방향이 갈린 쟁점이 있다."
-    return "확인된 인용은 한쪽으로 모이거나, 같은 명제로 붙지 않는다."
+    if any(issue["status"] == "distinct" for issue in issues):
+        return "같은 소재를 다루면서도 말하는 포인트가 갈린다."
+    return "확인된 인용은 같은 쪽으로 모인다."
 
 
 def _finish_source(raw: dict, claims: list[dict], source_id: str) -> dict | None:
@@ -313,8 +368,8 @@ def build_brief(
             skipped.append(f"youtube_captions: 유튜브가 이 네트워크의 자막 요청을 막아 {captions_missing}개를 건너뜀")
         else:
             skipped.append(f"youtube_captions: 자막을 가져오지 못함 {captions_missing}개")
-    apply_deltas(ready_videos)
     sources = ready_videos + ready_articles
+    apply_deltas(sources)
     issues = build_issues(sources)
     generated = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     report_id = hashlib.sha256(f"{keyword}|{generated}".encode()).hexdigest()[:12]

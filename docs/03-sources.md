@@ -131,10 +131,9 @@ https://news.google.com/rss/search?q=US+10-year+yield+when:14d&hl=en-US&gl=US&ce
 
 **Google Custom Search JSON API**:
 
-- 하루 100회 무료
-- 사이트 제한을 걸면 “칼럼만” 검색이 된다  
-  예: `site:hankyung.com OR site:mk.co.kr OR site:ft.com`
-- 쿼터를 키워드 확장에 쓰면 금방 닳는다. 보조로만
+- `GOOGLE_CSE_KEY`와 `GOOGLE_CSE_CX`가 있으면 검색어 최대 4개로 제목·스니펫·원문 주소를 받는다
+- 하루 100회 무료. 한 번 검색에 4회를 쓰므로 개인 사용은 남는다
+- 주소는 네이버와 같이 원문을 연 뒤 인용한다. 키가 없으면 이 경로만 건너뛴다
 
 ### 영문·웹 검색 API (유료이나 개인은 저렴)
 

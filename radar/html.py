@@ -149,7 +149,7 @@ def _video_card(video: dict) -> str:
         bits.append(f'<p class="summary">{_esc(video.get("summary") or "")}</p>')
     if video.get("delta"):
         bits.append(
-            '<div class="delta"><span class="delta-label">다른 영상과 다른 점</span>'
+            f'<div class="delta"><span class="delta-label">{_esc(video.get("delta_label") or "다른 영상과 다른 점")}</span>'
             f'<p>{_esc(video.get("delta") or "")}</p></div>'
         )
     quote = next((claim for claim in video.get("claims") or [] if claim.get("quote")), None)
@@ -191,6 +191,11 @@ def _article_card(article: dict) -> str:
         )
     elif article.get("summary"):
         bits.append(f'<p class="summary">{_esc(article.get("summary") or "")}</p>')
+    if article.get("delta"):
+        bits.append(
+            f'<div class="delta"><span class="delta-label">{_esc(article.get("delta_label") or "다른 글과 다른 점")}</span>'
+            f'<p>{_esc(article.get("delta") or "")}</p></div>'
+        )
     bits.append("</article>")
     return "".join(bits)
 

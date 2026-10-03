@@ -215,7 +215,28 @@ def select_naver_links(items: list[dict], keyword: str, days: int, now: datetime
         seen.add(url)
         ranked.append((len(hits), item))
     ranked.sort(key=lambda pair: -pair[0])
-    return [item for _hits, item in ranked[:limit]]
+    kept = []
+    for _hits, item in ranked:
+        title = item.get("title") or ""
+        if any(_similar_title(title, chosen.get("title") or "") for chosen in kept):
+            continue
+        kept.append(item)
+        if len(kept) >= limit:
+            break
+    return kept
+
+
+def _similar_title(left: str, right: str) -> bool:
+    from radar.textutil import compact
+
+    a = compact(left)
+    b = compact(right)
+    if len(a) < 8 or len(b) < 8:
+        return False
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    if short in long:
+        return True
+    return a[:18] == b[:18]
 
 
 def naver_news(query: str, settings: Settings, fetch=fetch_bytes, *, sort: str = "sim", display: int = 15) -> list[dict]:
@@ -231,6 +252,56 @@ def naver_news(query: str, settings: Settings, fetch=fetch_bytes, *, sort: str =
         "X-NCP-APIGW-API-KEY": settings.naver_secret,
     }))
     return parse_naver(payload)
+
+
+_SKIP_HOSTS = (
+    "youtube.com",
+    "youtu.be",
+    "instagram.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "google.com",
+    "news.google.com",
+)
+
+
+def parse_google_cse(payload: dict) -> list[dict]:
+    articles = []
+    for item in payload.get("items") or []:
+        link = (item.get("link") or "").strip()
+        host = urllib.parse.urlparse(link).netloc.removeprefix("www.")
+        if not link.startswith("http") or any(host == name or host.endswith("." + name) for name in _SKIP_HOSTS):
+            continue
+        title = strip_html(item.get("title") or "")
+        snippet = _without_title(strip_html(item.get("snippet") or ""), title)
+        if not title:
+            continue
+        articles.append({
+            "title": title,
+            "publisher": host or "Google",
+            "canonical_url": link,
+            "published_at": "",
+            "section": "column" if any(word in title for word in ("칼럼", "오피니언", "사설", "기고")) else "news",
+            "text": f"{title}. {snippet}".strip() if snippet else title,
+        })
+    return articles
+
+
+def google_cse(query: str, days: int, settings: Settings, fetch=fetch_bytes) -> list[dict]:
+    korean = any("\uac00" <= char <= "\ud7a3" for char in query)
+    params = {
+        "key": settings.google_key,
+        "cx": settings.google_cx,
+        "q": query,
+        "num": 5,
+        "dateRestrict": f"d{max(1, int(days))}",
+        "safe": "active",
+        "lr": "lang_ko" if korean else "lang_en",
+        "gl": "kr" if korean else "us",
+    }
+    url = "https://www.googleapis.com/customsearch/v1?" + urllib.parse.urlencode(params)
+    return parse_google_cse(json.loads(fetch(url)))
 
 
 def youtube_api_search(query: str, days: int, settings: Settings, fetch=fetch_bytes) -> list[dict]:
@@ -396,25 +467,32 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
         except Exception:
             skipped.append("google_news: 실패")
             break
+    frames = []
+    for query in [keyword, *queries]:
+        if query not in frames and any("\uac00" <= char <= "\ud7a3" for char in query):
+            frames.append(query)
+    frames = frames[:7]
+    found: list[dict] = []
     if not settings.naver_ready:
         skipped.append("naver: 키 없음")
-        return articles, skipped
-    frames = [keyword]
-    for suffix in ("상승", "하락"):
-        framed = f"{keyword} {suffix}".strip()
-        if framed not in frames:
-            frames.append(framed)
-    found: list[dict] = []
-    try:
-        for sort in ("sim", "date"):
+    else:
+        try:
             for query in frames:
-                found.extend(naver_news(query, settings, sort=sort))
-            picked = select_naver_links(found, keyword, days, datetime.now(timezone.utc))
-            if len(picked) >= 4:
-                break
-    except Exception:
-        skipped.append("naver: 실패")
-        return articles, skipped
+                found.extend(naver_news(query, settings, sort="sim"))
+            if len(select_naver_links(found, keyword, days, datetime.now(timezone.utc))) < 4:
+                found.extend(naver_news(keyword, settings, sort="date"))
+        except Exception:
+            skipped.append("naver: 실패")
+    if settings.google_ready:
+        english = [query for query in queries if query.isascii()]
+        google_queries = english[:2] + frames[:2]
+        try:
+            for query in google_queries:
+                found.extend(google_cse(query, days, settings))
+        except Exception:
+            skipped.append("google_search: 실패")
+    else:
+        skipped.append("google_search: 키 없음")
     links = [
         {
             "url": item.get("canonical_url") or "",
