@@ -239,6 +239,30 @@ def _similar_title(left: str, right: str) -> bool:
     return a[:18] == b[:18]
 
 
+def mix_topic_links(groups: list[list[dict]], keyword: str, days: int, now: datetime, limit: int = 8) -> list[dict]:
+    picked_groups = [select_naver_links(group, keyword, days, now, limit=3) for group in groups]
+    merged: list[dict] = []
+    seen = set()
+
+    def add(item: dict) -> None:
+        url = (item.get("canonical_url") or item.get("url") or "").strip()
+        title = item.get("title") or ""
+        if not url or url in seen:
+            return
+        if any(_similar_title(title, chosen.get("title") or "") for chosen in merged):
+            return
+        seen.add(url)
+        merged.append(item)
+
+    for slot in range(3):
+        for group in picked_groups:
+            if len(merged) >= limit:
+                return merged
+            if slot < len(group):
+                add(group[slot])
+    return merged
+
+
 def naver_news(query: str, settings: Settings, fetch=fetch_bytes, *, sort: str = "sim", display: int = 15) -> list[dict]:
     params = urllib.parse.urlencode({
         "query": query,
@@ -472,15 +496,16 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
         if query not in frames and any("\uac00" <= char <= "\ud7a3" for char in query):
             frames.append(query)
     frames = frames[:7]
-    found: list[dict] = []
+    groups: list[list[dict]] = []
+    now = datetime.now(timezone.utc)
     if not settings.naver_ready:
         skipped.append("naver: 키 없음")
     else:
         try:
             for query in frames:
-                found.extend(naver_news(query, settings, sort="sim"))
-            if len(select_naver_links(found, keyword, days, datetime.now(timezone.utc))) < 4:
-                found.extend(naver_news(keyword, settings, sort="date"))
+                groups.append(naver_news(query, settings, sort="sim"))
+            if len(mix_topic_links(groups, keyword, days, now)) < 4:
+                groups.append(naver_news(keyword, settings, sort="date"))
         except Exception:
             skipped.append("naver: 실패")
     if settings.google_ready:
@@ -488,7 +513,7 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
         google_queries = english[:2] + frames[:2]
         try:
             for query in google_queries:
-                found.extend(google_cse(query, days, settings))
+                groups.append(google_cse(query, days, settings))
         except Exception:
             skipped.append("google_search: 실패")
     else:
@@ -500,7 +525,7 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
             "published_at": item.get("published_at") or "",
             "section": item.get("section") or "news",
         }
-        for item in select_naver_links(found, keyword, days, datetime.now(timezone.utc))
+        for item in mix_topic_links(groups, keyword, days, now)
     ]
     pages, page_skips = articles_from_pages(links, fetch_article_html, limit=6)
     articles.extend(pages)

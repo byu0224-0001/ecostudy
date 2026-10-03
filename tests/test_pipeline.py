@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from radar.collect import articles_from_pages, html_to_text, page_title, parse_google_cse, select_naver_links
+from radar.collect import articles_from_pages, html_to_text, mix_topic_links, page_title, parse_google_cse, select_naver_links
 from radar.extract import grounding_links
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
@@ -232,6 +232,13 @@ class ArticleBodyTests(unittest.TestCase):
         dup_urls = [item["canonical_url"] for item in duplicated]
         self.assertIn("https://c.example/3", dup_urls)
         self.assertNotIn("https://c.example/9", dup_urls)
+        crowded = [
+            {"title": f"미국 국채 금리 기사 {index}", "canonical_url": f"https://a.example/{index}", "published_at": "2026-10-03", "text": "미국 국채 금리"}
+            for index in range(6)
+        ]
+        column = [{"title": "재정 칼럼 미국 국채", "canonical_url": "https://b.example/column", "published_at": "2026-10-02", "text": "미국 국채 금리 재정"}]
+        mixed = [item["canonical_url"] for item in mix_topic_links([crowded, column], "미국 국채 금리", 14, now, limit=4)]
+        self.assertEqual(mixed[1], "https://b.example/column")
 
     def test_google_cse_keeps_article_links(self):
         payload = {"items": [
