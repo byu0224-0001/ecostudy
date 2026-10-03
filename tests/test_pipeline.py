@@ -364,6 +364,16 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual(called["n"], 0)
         self.assertEqual(captioned["videos"][0]["caption_status"], "ok")
 
+    def test_video_claims_accept_a_bare_list(self):
+        from radar.extract import _video_claims
+
+        payload = {"candidates": [{"content": {"parts": [{"text": json.dumps([
+            {"quote": "국채 금리가 공급 때문에 올랐다.", "opinion": "공급이 민다", "stance": "up", "start_sec": 4},
+        ])}]}}]}
+        claims = _video_claims(payload)
+        self.assertEqual(claims[0]["start_sec"], 4)
+        self.assertEqual(claims[0]["quote_status"], "video")
+
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
             {"web": {"uri": "https://news.example/a", "title": "예"}},

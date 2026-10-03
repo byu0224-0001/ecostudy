@@ -161,8 +161,16 @@ def _video_claims(payload: dict | None) -> list[dict] | None:
         parsed = json.loads(raw)
     except Exception:
         return None
+    if isinstance(parsed, list):
+        items = parsed
+    elif isinstance(parsed, dict):
+        items = parsed.get("claims") or []
+    else:
+        return None
     claims = []
-    for item in (parsed.get("claims") or [])[:3]:
+    for item in items[:3]:
+        if not isinstance(item, dict):
+            continue
         quote = (item.get("quote") or "").strip()
         if not quote:
             continue
