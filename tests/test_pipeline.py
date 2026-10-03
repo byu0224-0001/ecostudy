@@ -145,7 +145,8 @@ class HtmlFileTests(unittest.TestCase):
         web = Path(__file__).resolve().parents[1] / "web"
         for name in ("index.html", "report.html", "history.html", "empty.html", "progress.html"):
             text = (web / name).read_text(encoding="utf-8")
-            self.assertIn("Manrope", text)
+            self.assertIn("pretendard", text)
+            self.assertNotIn("Manrope", text)
             self.assertIn("styles.css", text)
             self.assertIn("Opinion Radar", text)
         report = (web / "report.html").read_text(encoding="utf-8")

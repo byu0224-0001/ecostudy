@@ -161,7 +161,7 @@ def _video_card(video: dict) -> str:
             f'<p>“{_esc(quote.get("quote") or "")}”</p></blockquote>'
         )
     if url:
-        bits.append(f'<a class="button-primary" href="{_esc(url)}" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>')
+        bits.append(f'<a class="button-ghost" href="{_esc(url)}" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>')
     bits.append("</div></article>")
     return "".join(bits)
 
@@ -204,9 +204,7 @@ def _shell_open(title: str, asset_prefix: str, current: str) -> str:
         "<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{_esc(title)}</title>"
-        '<link rel="preconnect" href="https://fonts.googleapis.com">'
-        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-        '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Manrope:wght@800&display=swap" rel="stylesheet">'
+        '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">'
         f'<link rel="stylesheet" href="{_esc(asset_prefix)}styles.css"></head><body>'
         '<header class="nav"><div class="wrap nav-inner">'
         f'<a class="brand" href="{_esc(asset_prefix)}index.html">Opinion Radar</a>'

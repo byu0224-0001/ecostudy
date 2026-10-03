@@ -1,5 +1,4 @@
 import json
-import time
 import urllib.error
 import urllib.request
 
@@ -44,7 +43,8 @@ def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
     if payload is None:
         return None
     try:
-        raw = payload["candidates"][0]["content"]["parts"][0]["text"]
+        parts = payload["candidates"][0]["content"]["parts"]
+        raw = next(part["text"] for part in reversed(parts) if part.get("text"))
         parsed = json.loads(raw)
     except Exception:
         return None
@@ -104,16 +104,20 @@ def gemini_search_links(keyword: str, settings: Settings) -> tuple[list[dict], s
     return links, ""
 
 
-def _generate(settings: Settings, body: dict, timeout: int = 40, _retry: bool = True) -> tuple[dict | None, str]:
+def _generate(settings: Settings, body: dict, timeout: int = 40) -> tuple[dict | None, str]:
     if not settings.gemini_key:
         return None, ""
+    payload = dict(body)
+    config = dict(payload.get("generationConfig") or {})
+    config.setdefault("thinkingConfig", {"thinkingLevel": "low"})
+    payload["generationConfig"] = config
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{settings.gemini_model}:generateContent"
     )
     request = urllib.request.Request(
         url,
-        data=json.dumps(body).encode(),
+        data=json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
             "User-Agent": USER_AGENT,
@@ -124,11 +128,8 @@ def _generate(settings: Settings, body: dict, timeout: int = 40, _retry: bool = 
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode()), ""
     except urllib.error.HTTPError as exc:
-        if exc.code == 429 and _retry:
-            time.sleep(46)
-            return _generate(settings, body, timeout=timeout, _retry=False)
         if exc.code == 429:
-            return None, "gemini: 무료 한도에 걸림"
+            return None, "gemini: 요청 한도"
         return None, "gemini: 응답 실패"
     except Exception:
         return None, "gemini: 응답 실패"

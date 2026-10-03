@@ -50,7 +50,7 @@
 5. 기사는 네이버와 Google News RSS. SerpApi·유료 자막 API는 기본 경로가 아니다.
 6. 자막이 없으면 그 영상은 건너뛴다.
 
-화면은 [design.md](design.md)의 색, 모서리, Manrope, Inter를 따른다. 검색은 `web/index.html`, 예시 리포트는 `web/report.html`이다.
+화면은 [design.md](design.md)의 어두운 면, 헤어라인, Pretendard를 따른다. 검색은 `web/index.html`, 예시 리포트는 `web/report.html`이다.
 
 ```bash
 pip install -r requirements.txt

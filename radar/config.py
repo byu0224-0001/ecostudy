@@ -40,7 +40,7 @@ def load_settings(root: Path | None = None) -> Settings:
         naver_secret=os.environ.get("NAVER_CLIENT_SECRET", "").strip(),
         youtube_key=os.environ.get("YOUTUBE_API_KEY", "").strip(),
         gemini_key=os.environ.get("GEMINI_API_KEY", "").strip(),
-        gemini_model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash",
+        gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash",
         root=root,
     )
 

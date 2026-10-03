@@ -2,7 +2,7 @@
 
 읽는 화면은 폰 너비부터 잡는다. 데스크톱은 같은 카드를 가로로 펼친 것이다.
 
-시각 기준은 저장소 루트의 [design.md](../design.md)다. Wise Sans는 쓰지 않는다. 디스플레이는 Manrope 800, 본문은 Inter.
+시각 기준은 저장소 루트의 [design.md](../design.md)다. 글자는 Pretendard만 쓴다. 카드는 12px, 주요 버튼은 화면마다 라임 하나다.
 
 ## 위부터
 
