@@ -3,9 +3,9 @@ import json
 import sys
 from pathlib import Path
 
-from radar.collect import articles_from_pages, collect_articles, collect_videos, fetch_article_html, fetch_caption_segments
+from radar.collect import collect_articles, collect_videos, fetch_caption_segments
 from radar.config import load_settings, missing_key_names
-from radar.extract import gemini_search_links, make_extractor
+from radar.extract import make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
 from radar.store import connect, save_brief
@@ -75,16 +75,6 @@ def main(argv: list[str] | None = None) -> int:
 def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, settings, skip_youtube: bool = False) -> dict:
     queries = expand_queries(keyword)
     articles, skipped = collect_articles(keyword, days, settings, queries)
-    if settings.gemini_key:
-        try:
-            links, search_note = gemini_search_links(keyword, settings)
-            pages, page_skips = articles_from_pages(links, fetch_article_html, limit=5)
-            articles.extend(pages)
-            skipped.extend(page_skips)
-            if search_note:
-                skipped.append(search_note)
-        except Exception:
-            skipped.append("gemini_search: 실패")
     articles = _prefer_body(articles)
     videos = []
     if skip_youtube:

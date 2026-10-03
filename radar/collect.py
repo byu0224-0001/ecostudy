@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -145,12 +146,89 @@ def google_news(query: str, days: int, fetch=fetch_bytes) -> list[dict]:
     return parse_google_rss(fetch(url))
 
 
-def naver_news(query: str, settings: Settings, fetch=fetch_bytes) -> list[dict]:
-    params = urllib.parse.urlencode({"query": query, "display": 10, "sort": "date"})
-    url = "https://openapi.naver.com/v1/search/news.json?" + params
+_TOKEN_FORMS = {
+    "미국": ("미국", "美"),
+    "국채": ("국채", "treasury", "Treasury"),
+    "금리": ("금리", "yield", "Yield"),
+    "원달러": ("원달러", "원/달러"),
+}
+
+_BOILER_MARKERS = (
+    "관련기사",
+    "관련 기사",
+    "관련뉴스",
+    "관련 뉴스",
+    "추천뉴스",
+    "추천 뉴스",
+    "함께 보면",
+    "많이 본",
+    "실시간 급상승",
+    "Taboola",
+    "저작권자",
+    "재배포 금지",
+    "무단전재",
+    "무단 전재",
+)
+
+
+def keyword_tokens(keyword: str) -> list[str]:
+    return [part for part in re.split(r"\s+", (keyword or "").strip()) if len(part) >= 2]
+
+
+_ANCHOR_TOKENS = {"국채", "원달러"}
+
+
+def topic_hit_tokens(text: str, keyword: str) -> set[str]:
+    tokens = keyword_tokens(keyword)
+    hits = set()
+    for token in tokens:
+        if any(form in text for form in _TOKEN_FORMS.get(token, (token,))):
+            hits.add(token)
+    if "미국" in tokens and "국채" in tokens and any(
+        form in text for form in ("미국채", "미 국채", "美 국채", "美국채", "US Treasury", "U.S. Treasury")
+    ):
+        hits.update(("미국", "국채"))
+    return hits
+
+
+def topic_hits(text: str, keyword: str) -> int:
+    return len(topic_hit_tokens(text, keyword))
+
+
+def select_naver_links(items: list[dict], keyword: str, days: int, now: datetime, limit: int = 8) -> list[dict]:
+    from radar.pipeline import within_window
+
+    tokens = keyword_tokens(keyword)
+    need = 1 if len(tokens) <= 1 else min(2, len(tokens))
+    ranked = []
+    seen = set()
+    for item in items:
+        url = (item.get("canonical_url") or item.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        if not within_window(item.get("published_at"), days, now):
+            continue
+        title = item.get("title") or ""
+        hits = topic_hit_tokens(f"{title}\n{item.get('text') or ''}", keyword)
+        if len(hits) < need or any(token in _ANCHOR_TOKENS and token not in hits for token in tokens):
+            continue
+        seen.add(url)
+        ranked.append((len(hits), item))
+    ranked.sort(key=lambda pair: -pair[0])
+    return [item for _hits, item in ranked[:limit]]
+
+
+def naver_news(query: str, settings: Settings, fetch=fetch_bytes, *, sort: str = "sim", display: int = 15) -> list[dict]:
+    params = urllib.parse.urlencode({
+        "query": query,
+        "display": display,
+        "sort": sort,
+        "format": "json",
+    })
+    url = "https://naverapihub.apigw.ntruss.com/search/v1/news?" + params
     payload = json.loads(fetch(url, headers={
-        "X-Naver-Client-Id": settings.naver_id,
-        "X-Naver-Client-Secret": settings.naver_secret,
+        "X-NCP-APIGW-API-KEY-ID": settings.naver_id,
+        "X-NCP-APIGW-API-KEY": settings.naver_secret,
     }))
     return parse_naver(payload)
 
@@ -212,18 +290,33 @@ def html_to_text(html: str) -> str:
         match = re.search(pattern, cleaned)
         if not match:
             continue
-        text = _strip_byline(strip_html(match.group(1))[:3500])
+        text = _tidy_text(_cut_boilerplate(_strip_byline(strip_html(match.group(1))[:3500])))
         if len(text) >= 180:
             return text
     paragraphs = [strip_html(part) for part in re.findall(r"(?is)<p[^>]*>(.*?)</p>", cleaned)]
     paragraphs = [part for part in paragraphs if len(part) >= 40]
     if len(" ".join(paragraphs)) >= 180:
-        return _strip_byline(" ".join(paragraphs)[:3500])
-    return _strip_byline(strip_html(cleaned)[:3500])
+        return _tidy_text(_cut_boilerplate(_strip_byline(" ".join(paragraphs)[:3500])))
+    return _tidy_text(_cut_boilerplate(_strip_byline(strip_html(cleaned)[:3500])))
+
+
+def _cut_boilerplate(text: str) -> str:
+    cut = len(text)
+    for marker in _BOILER_MARKERS:
+        index = text.find(marker)
+        if index >= 80:
+            cut = min(cut, index)
+    return text[:cut].strip()
 
 
 def _strip_byline(text: str) -> str:
     return re.sub(r"\([^)]{0,40}\)\s*[가-힣A-Za-z ]{0,16}기자\s*=\s*", "", text).strip()
+
+
+def _tidy_text(text: str) -> str:
+    cleaned = re.sub(r"(?:/)?사진\s*=\s*\S+", " ", text or "")
+    cleaned = re.sub(r"\[[^\]]{0,16}사진[^\]]{0,16}\]", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def page_title(html: str) -> str:
@@ -231,7 +324,7 @@ def page_title(html: str) -> str:
     if not match:
         return ""
     title = strip_html(match.group(1))
-    return re.split(r"\s+[|\-–—<]\s*", title)[0].strip()
+    return re.split(r"\s+(?:[|\-–—]|::)\s*", title)[0].strip()
 
 
 def published_in_html(html: str) -> str:
@@ -240,33 +333,44 @@ def published_in_html(html: str) -> str:
 
 
 def articles_from_pages(links: list[dict], fetch_html, limit: int = 4) -> tuple[list[dict], list[str]]:
-    articles = []
-    failures = 0
+    candidates = []
     for link in links:
-        if len(articles) >= limit:
-            break
         url = (link.get("url") or "").strip()
-        if not url.startswith("https://"):
-            continue
+        if url.startswith("http://") or url.startswith("https://"):
+            candidates.append(link)
+        if len(candidates) >= limit + 4:
+            break
+
+    def load(link: dict) -> dict | None:
+        url = (link.get("url") or "").strip()
         try:
             final_url, html = fetch_html(url)
             text = html_to_text(html)
         except Exception:
-            failures += 1
-            continue
+            return None
         if len(text) < 180:
-            failures += 1
-            continue
+            return None
         title = page_title(html) or (link.get("title") or "").strip() or final_url
         host = urllib.parse.urlparse(final_url).netloc.removeprefix("www.")
-        articles.append({
+        return {
             "title": title,
             "publisher": host or (link.get("title") or "").strip() or "웹",
             "canonical_url": final_url or url,
-            "published_at": published_in_html(html),
-            "section": "column" if any(word in title for word in ("칼럼", "오피니언", "사설")) else "news",
+            "published_at": published_in_html(html) or (link.get("published_at") or ""),
+            "section": "column" if any(word in title for word in ("칼럼", "오피니언", "사설")) else (link.get("section") or "news"),
             "text": text,
-        })
+        }
+
+    loaded: list[dict | None]
+    if not candidates:
+        loaded = []
+    elif len(candidates) == 1:
+        loaded = [load(candidates[0])]
+    else:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            loaded = list(pool.map(load, candidates))
+    articles = [item for item in loaded if item][:limit]
+    failures = len(loaded) - len([item for item in loaded if item])
     skipped = []
     if failures and not articles:
         skipped.append("article_body: 본문을 열지 못함")
@@ -294,11 +398,35 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
             break
     if not settings.naver_ready:
         skipped.append("naver: 키 없음")
-    else:
-        try:
-            articles.extend(naver_news(keyword, settings))
-        except Exception:
-            skipped.append("naver: 실패")
+        return articles, skipped
+    frames = [keyword]
+    for suffix in ("상승", "하락"):
+        framed = f"{keyword} {suffix}".strip()
+        if framed not in frames:
+            frames.append(framed)
+    found: list[dict] = []
+    try:
+        for sort in ("sim", "date"):
+            for query in frames:
+                found.extend(naver_news(query, settings, sort=sort))
+            picked = select_naver_links(found, keyword, days, datetime.now(timezone.utc))
+            if len(picked) >= 4:
+                break
+    except Exception:
+        skipped.append("naver: 실패")
+        return articles, skipped
+    links = [
+        {
+            "url": item.get("canonical_url") or "",
+            "title": item.get("title") or "",
+            "published_at": item.get("published_at") or "",
+            "section": item.get("section") or "news",
+        }
+        for item in select_naver_links(found, keyword, days, datetime.now(timezone.utc))
+    ]
+    pages, page_skips = articles_from_pages(links, fetch_article_html, limit=6)
+    articles.extend(pages)
+    skipped.extend(page_skips)
     return articles, skipped
 
 
