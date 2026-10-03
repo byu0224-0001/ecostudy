@@ -98,12 +98,12 @@ Q4  소형 채널 힌트: "해설", "개인투자", "macro"
 
 ### 한국어 — 1순위 네이버 검색 API
 
-- `GET /v1/search/news.json`
-- Client ID / Secret
+- NAVER API Hub `GET /search/v1/news` (`X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY`)
 - 하루 25,000회. 혼자 쓰면 사실상 무한
-- `sort=date`로 최신
+- `sort=sim`으로 관련 기사를 먼저 보고, 기간 안 결과가 적으면 `sort=date`를 더한다
+- 제목에 키워드 토큰이 두 개 이상 겹치는 기사만 남긴다. `美 국채`는 `미국`+`국채`로 센다
 - `originallink`가 원문, `link`가 네이버 뉴스
-- `description`은 스니펫이다. 의견 추출에는 원문이 더 낫다
+- `description`은 스니펫이다. 의견 추출에는 원문 앞부분만 쓴다. 관련기사·Taboola 이하는 버린다
 
 원문 추출:
 

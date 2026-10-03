@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from radar.collect import articles_from_pages, html_to_text
+from radar.collect import articles_from_pages, html_to_text, page_title, select_naver_links
 from radar.extract import grounding_links
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
@@ -115,6 +115,8 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("https://i.ytimg.com/vi/aaa111/hqdefault.jpg", page)
         self.assertIn("다른 영상과 다른 점", page)
         self.assertNotIn("모델이 지어낸", page)
+        self.assertIn("국채 발행이 늘어 금리는 상승 압력이 있다.", page)
+        self.assertIn(">인용</a>", page)
 
     def test_ungrounded_extractor_drops_the_source(self):
         articles = [{
@@ -171,6 +173,13 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual(articles[0]["publisher"], "news.example")
         self.assertEqual(articles[0]["section"], "column")
         self.assertIn("본문 확인 실패", skipped[0])
+        dated = "<html><title>금리</title><p>" + ("국채 발행이 늘어 금리는 상승 압력이 있다. " * 8) + "</p></html>"
+        dated_articles, _notes = articles_from_pages(
+            [{"title": "금리", "url": "http://news.example/c", "published_at": "2026-10-01"}],
+            lambda _url: ("https://news.example/c", dated),
+            limit=1,
+        )
+        self.assertEqual(dated_articles[0]["published_at"], "2026-10-01")
         sidebar = "<p>" + ("사이드 금리 상승 압력 문장입니다. " * 8) + "</p>"
         body = "<div class=\"article-body\" itemprop=\"articleBody\">" + ("미국 30년 만기 국채금리가 최고치를 경신했다. " * 8) + "</div>"
         text = html_to_text(sidebar + body)
@@ -179,6 +188,34 @@ class ArticleBodyTests(unittest.TestCase):
         byline = "<div class=\"article-body\">" + ("(서울=연합뉴스) 김가 기자 = 국채 발행이 늘어 금리는 상승 압력이 있다. " * 6) + "</div>"
         self.assertNotIn("기자", html_to_text(byline))
         self.assertIn("상승 압력", html_to_text(byline))
+        noisy = "<div class=\"article-body\">" + ("미국 국채 금리가 5%로 올랐다. " * 8) + "관련기사 재배포 금지 by Taboola 실시간 급상승 뉴스</div>"
+        cleaned = html_to_text(noisy)
+        self.assertIn("5%", cleaned)
+        self.assertNotIn("Taboola", cleaned)
+        self.assertNotIn("급상승", cleaned)
+        credited = "<div class=\"article-body\">" + ("/사진=뉴시스 미국 국채 금리가 장중 5%를 넘었다. " * 6) + "</div>"
+        self.assertNotIn("사진=", html_to_text(credited))
+        self.assertIn("5%", html_to_text(credited))
+        self.assertEqual(page_title("<title>금리 쇼크 :: 공감언론 뉴시스 ::</title>"), "금리 쇼크")
+        self.assertEqual(page_title("<title>미국 국채금리 상승이 우리 경제에 미치는 영향 < 기고 < 오피니언</title>"), "미국 국채금리 상승이 우리 경제에 미치는 영향")
+
+    def test_naver_selection_keeps_overlapping_titles(self):
+        now = datetime(2026, 10, 3, tzinfo=timezone.utc)
+        items = [
+            {"title": "블랙록 3분기 실적", "canonical_url": "https://a.example/1", "published_at": "2026-10-03", "text": "블랙록"},
+            {"title": "인플레에 美 국채 시장 최악의 한 달", "canonical_url": "https://b.example/2", "published_at": "2026-10-02", "text": "국채"},
+            {"title": "떨어지는 칼날 美 국채 5%", "canonical_url": "https://c.example/3", "published_at": "2026-10-01", "text": "국채 금리"},
+            {"title": "고 금리 시대 주식시장", "canonical_url": "https://d.example/4", "published_at": "2026-10-03", "text": "금리"},
+            {"title": "오래된 미국 국채 금리", "canonical_url": "https://e.example/5", "published_at": "2026-08-01", "text": "미국 국채 금리"},
+            {"title": "美주담대 금리 7%", "canonical_url": "https://f.example/6", "published_at": "2026-10-01", "text": "미국 금리"},
+        ]
+        urls = [item["canonical_url"] for item in select_naver_links(items, "미국 국채 금리", 14, now)]
+        self.assertEqual(urls[0], "https://c.example/3")
+        self.assertIn("https://b.example/2", urls)
+        self.assertNotIn("https://a.example/1", urls)
+        self.assertNotIn("https://d.example/4", urls)
+        self.assertNotIn("https://e.example/5", urls)
+        self.assertNotIn("https://f.example/6", urls)
 
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
