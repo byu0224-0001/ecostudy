@@ -5,7 +5,7 @@ from pathlib import Path
 
 from radar.collect import collect_articles, collect_videos, fetch_caption_segments
 from radar.config import load_settings, missing_key_names
-from radar.extract import make_extractor
+from radar.extract import gemini_video_claims, make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
 from radar.store import connect, save_brief
@@ -92,6 +92,20 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
                 captions.reason = "blocked"
             return None
 
+    def watch(video: dict):
+        if watch.count >= 2:
+            return None
+        claims, note = gemini_video_claims(video, settings)
+        if claims:
+            watch.count += 1
+            return claims
+        if note:
+            watch.note = note
+        return None
+
+    watch.count = 0
+    watch.note = ""
+
     return build_brief(
         keyword,
         days=days,
@@ -100,6 +114,7 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
         articles=articles,
         videos=videos,
         caption_fn=captions,
+        video_fn=watch if settings.gemini_key else None,
         extractor=make_extractor(settings),
         skipped=skipped,
     )

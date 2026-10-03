@@ -154,12 +154,16 @@ def _video_card(video: dict) -> str:
         )
     quote = next((claim for claim in video.get("claims") or [] if claim.get("quote")), None)
     if quote:
-        stamp = _clock(quote.get("start_sec")) if quote.get("start_sec") is not None else "인용"
+        heard = quote.get("quote_status") == "video"
+        stamp = _clock(quote.get("start_sec")) if quote.get("start_sec") is not None else ("영상" if heard else "인용")
         bits.append(
             '<blockquote class="quote">'
             f'<a class="stamp" href="{_esc(stamp_url)}" target="_blank" rel="noopener noreferrer">{_esc(stamp)}</a>'
             f'<p>“{_esc(quote.get("quote") or "")}”</p></blockquote>'
         )
+        if heard:
+            scope = video.get("heard_scope") or "영상"
+            bits.append(f'<p class="summary">자막 대신 모델이 {_esc(scope)}에서 들은 말입니다.</p>')
     if url:
         bits.append(f'<a class="button-ghost" href="{_esc(url)}" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>')
     bits.append("</div></article>")

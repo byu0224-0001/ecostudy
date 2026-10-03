@@ -105,7 +105,89 @@ def gemini_search_links(keyword: str, settings: Settings) -> tuple[list[dict], s
     return links, ""
 
 
-def _generate(settings: Settings, body: dict, timeout: int = 40) -> tuple[dict | None, str]:
+VIDEO_FALLBACK_MODEL = "gemini-3.5-flash"
+
+
+def gemini_video_claims(video: dict, settings: Settings) -> tuple[list[dict] | None, str]:
+    video_id = (video.get("video_id") or "").strip()
+    if not video_id or not settings.gemini_key:
+        return None, ""
+    duration = video.get("duration_sec") or 0
+    end = int(duration) if 30 <= duration <= 180 else 180
+    scope = "영상 전체" if duration and duration <= end else f"처음 {end}초"
+    prompt = (
+        f"이 유튜브 영상의 {scope}에서 화자가 실제로 말한 금융 의견만 JSON으로 뽑아라. "
+        "quote는 들은 문장에 가깝게 적고, 영상에 없는 전망은 만들지 마라. 확신이 없으면 claims를 비운다. "
+        "opinion은 quote의 포인트를 40자 안으로 줄인다. "
+        "stance는 up, down, range, structural, unknown 중 하나다. "
+        "start_sec는 그 말이 나온 초이고, 모르면 null이다.\n"
+        '{"claims":[{"quote":"","opinion":"","stance":"unknown","start_sec":null}]}\n\n'
+        f"영상 제목: {video.get('title') or ''}"
+    )
+    body = {
+        "contents": [{"parts": [
+            {
+                "file_data": {"file_uri": f"https://www.youtube.com/watch?v={video_id}"},
+                "video_metadata": {"start_offset": "0s", "end_offset": f"{end}s"},
+            },
+            {"text": prompt},
+        ]}],
+        "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
+    }
+    models = [settings.gemini_model]
+    if VIDEO_FALLBACK_MODEL not in models:
+        models.append(VIDEO_FALLBACK_MODEL)
+    note = "youtube_video: 영상을 열지 못함"
+    for model in models:
+        payload, note = _generate(settings, body, timeout=70, model=model)
+        claims = [claim for claim in (_video_claims(payload) or []) if _usable_quote(claim.get("quote") or "")]
+        if claims:
+            for claim in claims:
+                claim["heard_scope"] = scope
+            return claims, ""
+        if payload is not None:
+            return None, "youtube_video: 의견 문장을 찾지 못함"
+        if note != "gemini: 요청 한도":
+            break
+    return None, note or "youtube_video: 영상을 열지 못함"
+
+
+def _video_claims(payload: dict | None) -> list[dict] | None:
+    if not payload:
+        return None
+    try:
+        parts = payload["candidates"][0]["content"]["parts"]
+        raw = next(part["text"] for part in reversed(parts) if part.get("text"))
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    claims = []
+    for item in (parsed.get("claims") or [])[:3]:
+        quote = (item.get("quote") or "").strip()
+        if not quote:
+            continue
+        start = item.get("start_sec")
+        try:
+            start = int(float(start)) if start is not None else None
+        except (TypeError, ValueError):
+            start = None
+        claims.append({
+            "quote": quote,
+            "fact": "",
+            "interpretation": "",
+            "opinion": item.get("opinion") or quote,
+            "forecast": "",
+            "implication": "",
+            "evidence": [],
+            "assumptions": [],
+            "quote_status": "video",
+            "start_sec": start,
+            "stance": item.get("stance") if item.get("stance") in {"up", "down", "range", "structural", "unknown"} else stance_of(quote),
+        })
+    return claims or None
+
+
+def _generate(settings: Settings, body: dict, timeout: int = 40, model: str = "") -> tuple[dict | None, str]:
     if not settings.gemini_key:
         return None, ""
     payload = dict(body)
@@ -114,7 +196,7 @@ def _generate(settings: Settings, body: dict, timeout: int = 40) -> tuple[dict |
     payload["generationConfig"] = config
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{settings.gemini_model}:generateContent"
+        f"{model or settings.gemini_model}:generateContent"
     )
     request = urllib.request.Request(
         url,

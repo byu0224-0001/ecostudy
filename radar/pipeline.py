@@ -303,8 +303,13 @@ def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> st
     return "확인된 인용은 같은 쪽으로 모인다."
 
 
-def _finish_source(raw: dict, claims: list[dict], source_id: str) -> dict | None:
-    grounded = keep_grounded(claims, raw.get("text") or "")
+def _prefer_watchable(videos: list[dict]) -> list[dict]:
+    short = [video for video in videos if 45 <= (video.get("duration_sec") or 0) <= 480]
+    return short or videos
+
+
+def _finish_source(raw: dict, claims: list[dict], source_id: str, *, trust: bool = False) -> dict | None:
+    grounded = list(claims) if trust else keep_grounded(claims, raw.get("text") or "")
     if not grounded:
         return None
     blob = " ".join(claim["quote"] for claim in grounded)
@@ -332,6 +337,7 @@ def build_brief(
     articles: list[dict] | None = None,
     videos: list[dict] | None = None,
     caption_fn=None,
+    video_fn=None,
     extractor=None,
     skipped: list[str] | None = None,
     now: datetime | None = None,
@@ -341,7 +347,7 @@ def build_brief(
     caption_fn = caption_fn or (lambda _video_id: None)
     skipped = list(skipped or [])
     articles = [item for item in (articles or []) if within_window(item.get("published_at"), days, now)]
-    videos = [item for item in (videos or []) if within_window(item.get("published_at"), days, now)]
+    videos = _prefer_watchable([item for item in (videos or []) if within_window(item.get("published_at"), days, now)])
     article_pool = select_diverse(articles, limit=max_articles, id_key="canonical_url", group_key="publisher", group_cap=2)
     video_pool = select_diverse(videos, limit=max_videos, id_key="video_id", group_key="channel", group_cap=1)
 
@@ -361,18 +367,32 @@ def build_brief(
 
     ready_videos = []
     captions_missing = 0
+    heard_count = 0
     for video in video_pool:
         segments = caption_fn(video.get("video_id") or "")
-        if not segments:
-            captions_missing += 1
-            continue
-        text = "\n".join(segment.get("text") or "" for segment in segments)
-        raw = dict(video)
-        raw["text"] = text
-        finished = _finish_source(raw, extractor(text, segments), f"yt_{video.get('video_id')}")
-        if finished is None:
-            continue
         video_id = video.get("video_id") or ""
+        finished = None
+        caption_status = "ok"
+        scope = ""
+        if segments:
+            text = "\n".join(segment.get("text") or "" for segment in segments)
+            raw = dict(video)
+            raw["text"] = text
+            finished = _finish_source(raw, extractor(text, segments), f"yt_{video_id}")
+        else:
+            heard = video_fn(video) if video_fn else None
+            if heard:
+                scope = next((claim.get("heard_scope") for claim in heard if claim.get("heard_scope")), "")
+                finished = _finish_source(video, heard, f"yt_{video_id}", trust=True)
+                caption_status = "video"
+            else:
+                captions_missing += 1
+        if finished is None:
+            if caption_status == "video":
+                captions_missing += 1
+            continue
+        if caption_status == "video":
+            heard_count += 1
         finished.update({
             "video_id": video_id,
             "url": video.get("url") or (f"https://youtu.be/{video_id}" if video_id else ""),
@@ -383,16 +403,22 @@ def build_brief(
             "thumbnail_url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else "",
             "language": video.get("language") or "",
             "subscriber_bucket": video.get("subscriber_bucket") or "unknown",
-            "caption_status": "ok",
-            "selected_because": "최근 업로드, 채널당 1개",
+            "caption_status": caption_status,
+            "heard_scope": scope,
+            "selected_because": "모델이 공개 영상을 봄" if caption_status == "video" else "최근 업로드, 채널당 1개",
         })
         ready_videos.append(finished)
 
+    if heard_count:
+        skipped.append(f"youtube_video: 자막 대신 모델이 영상 {heard_count}개를 보고 정리함")
     if captions_missing:
         if getattr(caption_fn, "reason", "") == "blocked":
             skipped.append(f"youtube_captions: 유튜브가 이 네트워크의 자막 요청을 막아 {captions_missing}개를 건너뜀")
         else:
             skipped.append(f"youtube_captions: 자막을 가져오지 못함 {captions_missing}개")
+    note = getattr(video_fn, "note", "") if video_fn else ""
+    if note:
+        skipped.append(note)
     sources = ready_videos + ready_articles
     apply_deltas(sources)
     issues = build_issues(sources)

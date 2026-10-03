@@ -305,6 +305,65 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertTrue(any(issue["id"] == "points" for issue in split["issues"]))
         self.assertEqual(split["one_line"], "출처마다 짚는 문장이 다르다.")
 
+    def test_video_understanding_keeps_a_card_without_captions(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = [{
+            "video_id": "watch11",
+            "title": "공급 영상",
+            "channel": "데스크",
+            "published_at": "2026-09-28",
+            "duration_sec": 120,
+            "url": "https://youtu.be/watch11",
+        }]
+
+        def watch(_video):
+            return [{
+                "quote": "국채 발행이 늘어 금리는 상승 압력이 있다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "공급이 금리를 밀어 올린다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 15,
+                "stance": "up",
+                "heard_scope": "영상 전체",
+            }]
+
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+        )
+        self.assertEqual(report["pool"]["youtube_kept"], 1)
+        self.assertEqual(report["videos"][0]["caption_status"], "video")
+        self.assertIn("모델이 영상 1개를 보고 정리함", " ".join(report["skipped"]))
+        page = render_report(report, "")
+        self.assertIn("모델이 영상 전체에서 들은 말입니다.", page)
+        self.assertIn("0:15", page)
+
+        called = {"n": 0}
+
+        def unused(_video):
+            called["n"] += 1
+            return None
+
+        captioned = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: [{"text": "국채 발행이 늘어 금리는 상승 압력이 있다.", "start": 12}],
+            video_fn=unused,
+            now=now,
+        )
+        self.assertEqual(called["n"], 0)
+        self.assertEqual(captioned["videos"][0]["caption_status"], "ok")
+
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
             {"web": {"uri": "https://news.example/a", "title": "예"}},
