@@ -217,7 +217,32 @@ def build_issues(sources: list[dict]) -> list[dict]:
             "sides": sides,
             "status": status,
         })
+    if not any(issue["status"] in {"conflict", "distinct"} for issue in issues):
+        overview = _points_issue(sources)
+        if overview:
+            issues.append(overview)
     return issues
+
+
+def _points_issue(sources: list[dict]) -> dict | None:
+    sides = []
+    seen = set()
+    for source in sources:
+        point = _point(source)
+        key = compact(point)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        sides.append({"label": point, "source_ids": [source["id"]], "quote_ok": True})
+    if len(sides) < 2:
+        return None
+    return {
+        "id": "points",
+        "label": "포인트",
+        "proposition": "각 출처가 확인된 인용에서 말하는 것",
+        "sides": sides[:4],
+        "status": "distinct",
+    }
 
 
 def _delta_label(source: dict, other: dict) -> str:
@@ -274,7 +299,7 @@ def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> st
     if any(issue["status"] == "conflict" for issue in issues):
         return "확인된 인용 안에서 방향이 갈린 쟁점이 있다."
     if any(issue["status"] == "distinct" for issue in issues):
-        return "같은 소재를 다루면서도 말하는 포인트가 갈린다."
+        return "출처마다 짚는 문장이 다르다."
     return "확인된 인용은 같은 쪽으로 모인다."
 
 

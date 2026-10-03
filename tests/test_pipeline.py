@@ -271,6 +271,32 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertIn("다른 글과 다른 점", page)
         self.assertIn("공급이 민다", page)
         self.assertIn("물가가 민다", page)
+        split = build_brief(
+            "미국 국채 금리",
+            articles=[
+                {
+                    "title": "연준 경로",
+                    "publisher": "한경",
+                    "canonical_url": "https://example.test/fed",
+                    "published_at": "2026-09-28",
+                    "section": "news",
+                    "text": "기준금리를 올려 금리는 상승 압력이 있다.",
+                },
+                {
+                    "title": "발행 경로",
+                    "publisher": "매경",
+                    "canonical_url": "https://example.test/supply",
+                    "published_at": "2026-09-27",
+                    "section": "column",
+                    "text": "국채 발행이 늘어 금리는 상승 압력이 있다.",
+                },
+            ],
+            videos=[],
+            caption_fn=lambda _id: None,
+            now=now,
+        )
+        self.assertTrue(any(issue["id"] == "points" for issue in split["issues"]))
+        self.assertEqual(split["one_line"], "출처마다 짚는 문장이 다르다.")
 
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
