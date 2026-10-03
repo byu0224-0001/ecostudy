@@ -182,7 +182,14 @@ def _article_card(article: dict) -> str:
     else:
         bits.append(f"<h3>{title}</h3>")
     bits.append(_keywords(article.get("keywords") or []))
-    if article.get("summary"):
+    quote = next((claim for claim in article.get("claims") or [] if claim.get("quote")), None)
+    if quote:
+        bits.append(
+            '<blockquote class="quote">'
+            f'<a class="stamp" href="{_esc(url)}" target="_blank" rel="noopener noreferrer">인용</a>'
+            f'<p>“{_esc(quote.get("quote") or "")}”</p></blockquote>'
+        )
+    elif article.get("summary"):
         bits.append(f'<p class="summary">{_esc(article.get("summary") or "")}</p>')
     bits.append("</article>")
     return "".join(bits)

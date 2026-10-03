@@ -324,7 +324,7 @@ def page_title(html: str) -> str:
     if not match:
         return ""
     title = strip_html(match.group(1))
-    return re.split(r"\s+(?:[|\-–—]|::)\s*", title)[0].strip()
+    return re.split(r"\s+(?:[|\-–—]|::|<)\s*", title)[0].strip()
 
 
 def published_in_html(html: str) -> str:

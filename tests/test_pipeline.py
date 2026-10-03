@@ -115,6 +115,8 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("https://i.ytimg.com/vi/aaa111/hqdefault.jpg", page)
         self.assertIn("다른 영상과 다른 점", page)
         self.assertNotIn("모델이 지어낸", page)
+        self.assertIn("국채 발행이 늘어 금리는 상승 압력이 있다.", page)
+        self.assertIn(">인용</a>", page)
 
     def test_ungrounded_extractor_drops_the_source(self):
         articles = [{
@@ -195,6 +197,7 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertNotIn("사진=", html_to_text(credited))
         self.assertIn("5%", html_to_text(credited))
         self.assertEqual(page_title("<title>금리 쇼크 :: 공감언론 뉴시스 ::</title>"), "금리 쇼크")
+        self.assertEqual(page_title("<title>미국 국채금리 상승이 우리 경제에 미치는 영향 < 기고 < 오피니언</title>"), "미국 국채금리 상승이 우리 경제에 미치는 영향")
 
     def test_naver_selection_keeps_overlapping_titles(self):
         now = datetime(2026, 10, 3, tzinfo=timezone.utc)
