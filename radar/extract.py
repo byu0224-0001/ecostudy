@@ -113,8 +113,12 @@ def gemini_video_claims(video: dict, settings: Settings) -> tuple[list[dict] | N
     if not video_id or not settings.gemini_key:
         return None, ""
     duration = video.get("duration_sec") or 0
-    end = int(duration) if 30 <= duration <= 180 else 180
-    scope = "영상 전체" if duration and duration <= end else f"처음 {end}초"
+    if 30 <= duration <= 360:
+        end = int(duration)
+        scope = "영상 전체"
+    else:
+        end = 240
+        scope = f"처음 {end}초"
     prompt = (
         f"이 유튜브 영상의 {scope}에서 화자가 실제로 말한 금융 의견만 JSON으로 뽑아라. "
         "quote는 들은 문장에 가깝게 적고, 영상에 없는 전망은 만들지 마라. 확신이 없으면 claims를 비운다. "

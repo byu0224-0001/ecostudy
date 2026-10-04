@@ -93,18 +93,25 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
             return None
 
     def watch(video: dict):
-        if watch.count >= 2:
+        if watch.stopped or watch.count >= max_videos:
             return None
-        claims, note = gemini_video_claims(video, settings)
+        try:
+            claims, note = gemini_video_claims(video, settings)
+        except Exception:
+            watch.note = "youtube_video: 영상을 열지 못함"
+            return None
         if claims:
             watch.count += 1
             return claims
         if note:
             watch.note = note
+            if "한도" in note:
+                watch.stopped = True
         return None
 
     watch.count = 0
     watch.note = ""
+    watch.stopped = False
 
     return build_brief(
         keyword,

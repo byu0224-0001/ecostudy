@@ -303,9 +303,21 @@ def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> st
     return "확인된 인용은 같은 쪽으로 모인다."
 
 
-def _prefer_watchable(videos: list[dict]) -> list[dict]:
-    short = [video for video in videos if 45 <= (video.get("duration_sec") or 0) <= 480]
-    return short or videos
+def _prefer_watchable(videos: list[dict], keyword: str = "") -> list[dict]:
+    kept = []
+    for video in videos:
+        duration = video.get("duration_sec") or 0
+        if 0 < duration < 45:
+            continue
+        kept.append(video)
+    tokens = [part for part in (keyword or "").split() if len(part) >= 2]
+
+    def rank(video: dict) -> int:
+        title = video.get("title") or ""
+        return sum(token in title for token in tokens)
+
+    kept.sort(key=rank, reverse=True)
+    return kept
 
 
 def _finish_source(raw: dict, claims: list[dict], source_id: str, *, trust: bool = False) -> dict | None:
@@ -347,7 +359,10 @@ def build_brief(
     caption_fn = caption_fn or (lambda _video_id: None)
     skipped = list(skipped or [])
     articles = [item for item in (articles or []) if within_window(item.get("published_at"), days, now)]
-    videos = _prefer_watchable([item for item in (videos or []) if within_window(item.get("published_at"), days, now)])
+    videos = _prefer_watchable(
+        [item for item in (videos or []) if within_window(item.get("published_at"), days, now)],
+        keyword,
+    )
     article_pool = select_diverse(articles, limit=max_articles, id_key="canonical_url", group_key="publisher", group_cap=2)
     video_pool = select_diverse(videos, limit=max_videos, id_key="video_id", group_key="channel", group_cap=1)
 

@@ -544,8 +544,24 @@ def collect_videos(queries: list[str], days: int, settings: Settings) -> tuple[l
                 skipped.append("youtube_api: 실패")
                 break
         return videos, skipped
-    try:
-        videos.extend(youtube_ytdlp_search(queries[0], limit=8))
-    except Exception:
+    keyword = queries[0] if queries else ""
+    frames = [keyword]
+    for suffix in ("전망", "해설", "상승"):
+        framed = f"{keyword} {suffix}".strip()
+        if framed not in frames:
+            frames.append(framed)
+    seen = set()
+    for query in frames:
+        try:
+            found = youtube_ytdlp_search(query, limit=6)
+        except Exception:
+            continue
+        for video in found:
+            video_id = video.get("video_id") or ""
+            if not video_id or video_id in seen:
+                continue
+            seen.add(video_id)
+            videos.append(video)
+    if not videos:
         skipped.append("youtube: 검색 실패")
     return videos, skipped

@@ -374,6 +374,45 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual(claims[0]["start_sec"], 4)
         self.assertEqual(claims[0]["quote_status"], "video")
 
+    def test_long_videos_stay_beside_short_ones(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = [
+            {
+                "video_id": "short11",
+                "title": "짧은 국채 금리",
+                "channel": "짧은채널",
+                "published_at": "2026-09-28",
+                "duration_sec": 120,
+                "url": "https://youtu.be/short11",
+            },
+            {
+                "video_id": "long222",
+                "title": "긴 국채 금리 해설",
+                "channel": "긴채널",
+                "published_at": "2026-09-27",
+                "duration_sec": 1002,
+                "url": "https://youtu.be/long222",
+            },
+            {
+                "video_id": "tiny333",
+                "title": "국채 쇼츠",
+                "channel": "쇼츠",
+                "published_at": "2026-09-29",
+                "duration_sec": 20,
+                "url": "https://youtu.be/tiny333",
+            },
+        ]
+
+        def captions(_video_id):
+            return [{"text": "국채 발행이 늘어 금리는 상승 압력이 있다.", "start": 8}]
+
+        report = build_brief("미국 국채 금리", articles=[], videos=videos, caption_fn=captions, now=now, max_videos=6)
+        ids = [video["video_id"] for video in report["videos"]]
+        self.assertIn("long222", ids)
+        self.assertIn("short11", ids)
+        self.assertNotIn("tiny333", ids)
+        self.assertEqual(report["pool"]["youtube_seen"], 2)
+
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
             {"web": {"uri": "https://news.example/a", "title": "예"}},
