@@ -413,6 +413,55 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertNotIn("tiny333", ids)
         self.assertEqual(report["pool"]["youtube_seen"], 2)
 
+    def test_failed_watches_do_not_stop_the_card_count(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = []
+        for index, video_id in enumerate(("fail1", "fail2", "keep1", "keep2")):
+            videos.append({
+                "video_id": video_id,
+                "title": f"미국 국채 금리 {video_id}",
+                "channel": f"채널{index}",
+                "published_at": "",
+                "duration_sec": 400 + index,
+                "url": f"https://youtu.be/{video_id}",
+            })
+
+        def watch(video):
+            if video["video_id"].startswith("fail"):
+                return None
+            return [{
+                "quote": "미국 국채 금리는 발행 물량에 따라 움직인다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "물량이 금리를 움직인다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 9,
+                "stance": "up",
+                "heard_scope": "처음 90초",
+            }]
+
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+            max_videos=2,
+        )
+        self.assertEqual([video["video_id"] for video in report["videos"]], ["keep1", "keep2"])
+        self.assertIn("제한 시간 안에 의견을 받지 못해 건너뜀", " ".join(report["skipped"]))
+
+    def test_video_quote_accepts_treasury_wording(self):
+        from radar.extract import _video_quote_ok
+
+        self.assertTrue(_video_quote_ok("미국 국채의 가격이 내려간 상태입니다.", "미국 국채 금리"))
+        self.assertFalse(_video_quote_ok("짧은 말", "미국 국채 금리"))
+
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
             {"web": {"uri": "https://news.example/a", "title": "예"}},

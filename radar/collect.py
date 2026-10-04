@@ -553,7 +553,7 @@ def collect_videos(queries: list[str], days: int, settings: Settings) -> tuple[l
     seen = set()
     for query in frames:
         try:
-            found = youtube_ytdlp_search(query, limit=6)
+            found = youtube_ytdlp_search(query, limit=8)
         except Exception:
             continue
         for video in found:

@@ -131,8 +131,8 @@ def _issues_for(blob: str) -> list[str]:
     return found
 
 
-def select_diverse(items: list[dict], *, limit: int, id_key: str, group_key: str, group_cap: int = 1) -> list[dict]:
-    ranked = sorted(items, key=lambda item: item.get("published_at") or "", reverse=True)
+def select_diverse(items: list[dict], *, limit: int, id_key: str, group_key: str, group_cap: int = 1, preserve_order: bool = False) -> list[dict]:
+    ranked = list(items) if preserve_order else sorted(items, key=lambda item: item.get("published_at") or "", reverse=True)
     seen_ids = set()
     group_counts: dict[str, int] = {}
     kept = []
@@ -317,7 +317,15 @@ def _prefer_watchable(videos: list[dict], keyword: str = "") -> list[dict]:
         return sum(token in title for token in tokens)
 
     kept.sort(key=rank, reverse=True)
-    return kept
+    short = [video for video in kept if 0 < (video.get("duration_sec") or 0) <= 360]
+    long = [video for video in kept if video not in short]
+    merged = []
+    while short or long:
+        if short:
+            merged.append(short.pop(0))
+        if long:
+            merged.append(long.pop(0))
+    return merged
 
 
 def _finish_source(raw: dict, claims: list[dict], source_id: str, *, trust: bool = False) -> dict | None:
@@ -364,7 +372,14 @@ def build_brief(
         keyword,
     )
     article_pool = select_diverse(articles, limit=max_articles, id_key="canonical_url", group_key="publisher", group_cap=2)
-    video_pool = select_diverse(videos, limit=max_videos, id_key="video_id", group_key="channel", group_cap=1)
+    video_pool = select_diverse(
+        videos,
+        limit=max(max_videos * 3, 12),
+        id_key="video_id",
+        group_key="channel",
+        group_cap=1,
+        preserve_order=True,
+    )
 
     ready_articles = []
     for index, article in enumerate(article_pool, start=1):
@@ -384,6 +399,8 @@ def build_brief(
     captions_missing = 0
     heard_count = 0
     for video in video_pool:
+        if len(ready_videos) >= max_videos:
+            break
         segments = caption_fn(video.get("video_id") or "")
         video_id = video.get("video_id") or ""
         finished = None
@@ -427,7 +444,9 @@ def build_brief(
     if heard_count:
         skipped.append(f"youtube_video: 자막 대신 모델이 영상 {heard_count}개를 보고 정리함")
     if captions_missing:
-        if getattr(caption_fn, "reason", "") == "blocked":
+        if video_fn:
+            skipped.append(f"youtube_video: 영상 {captions_missing}개는 제한 시간 안에 의견을 받지 못해 건너뜀")
+        elif getattr(caption_fn, "reason", "") == "blocked":
             skipped.append(f"youtube_captions: 유튜브가 이 네트워크의 자막 요청을 막아 {captions_missing}개를 건너뜀")
         else:
             skipped.append(f"youtube_captions: 자막을 가져오지 못함 {captions_missing}개")
