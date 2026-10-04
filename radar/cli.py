@@ -5,7 +5,7 @@ from pathlib import Path
 
 from radar.collect import collect_articles, collect_videos, fetch_caption_segments
 from radar.config import load_settings, missing_key_names
-from radar.extract import make_extractor
+from radar.extract import gemini_video_claims, gemini_video_deltas, make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
 from radar.store import connect, save_brief
@@ -92,6 +92,34 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
                 captions.reason = "blocked"
             return None
 
+    def watch(video: dict):
+        if watch.stopped or watch.count >= max_videos:
+            return None
+        try:
+            claims, note = gemini_video_claims(video, settings, keyword)
+        except Exception:
+            watch.note = "youtube_video: 영상을 열지 못함"
+            return None
+        if claims:
+            watch.count += 1
+            return claims
+        if note:
+            watch.note = note
+            if "한도" in note:
+                watch.stopped = True
+                watch.note = "gemini: 요청 한도로 이후 영상은 보지 않음"
+        return None
+
+    watch.count = 0
+    watch.note = ""
+    watch.stopped = False
+
+    def compare(videos: list[dict]):
+        try:
+            return gemini_video_deltas(videos, settings)
+        except Exception:
+            return {}
+
     return build_brief(
         keyword,
         days=days,
@@ -100,6 +128,8 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
         articles=articles,
         videos=videos,
         caption_fn=captions,
+        video_fn=watch if settings.gemini_key else None,
+        compare_fn=compare if settings.gemini_key else None,
         extractor=make_extractor(settings),
         skipped=skipped,
     )

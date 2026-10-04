@@ -146,7 +146,7 @@ def _video_card(video: dict) -> str:
     bits.append(f'<h3>{_esc(video.get("title") or "")}</h3>')
     bits.append(_keywords(video.get("keywords") or []))
     if video.get("summary"):
-        bits.append(f'<p class="summary">{_esc(video.get("summary") or "")}</p>')
+        bits.append(f'<p class="summary"><span class="delta-label">핵심</span>{_esc(video.get("summary") or "")}</p>')
     if video.get("delta"):
         bits.append(
             f'<div class="delta"><span class="delta-label">{_esc(video.get("delta_label") or "다른 영상과 다른 점")}</span>'
@@ -154,12 +154,16 @@ def _video_card(video: dict) -> str:
         )
     quote = next((claim for claim in video.get("claims") or [] if claim.get("quote")), None)
     if quote:
-        stamp = _clock(quote.get("start_sec")) if quote.get("start_sec") is not None else "인용"
+        heard = quote.get("quote_status") == "video"
+        stamp = _clock(quote.get("start_sec")) if quote.get("start_sec") is not None else ("영상" if heard else "인용")
         bits.append(
             '<blockquote class="quote">'
             f'<a class="stamp" href="{_esc(stamp_url)}" target="_blank" rel="noopener noreferrer">{_esc(stamp)}</a>'
             f'<p>“{_esc(quote.get("quote") or "")}”</p></blockquote>'
         )
+        if heard:
+            scope = video.get("heard_scope") or "영상"
+            bits.append(f'<p class="summary">자막 대신 모델이 {_esc(scope)}에서 들은 말입니다.</p>')
     if url:
         bits.append(f'<a class="button-ghost" href="{_esc(url)}" target="_blank" rel="noopener noreferrer">유튜브에서 보기</a>')
     bits.append("</div></article>")

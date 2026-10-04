@@ -131,8 +131,8 @@ def _issues_for(blob: str) -> list[str]:
     return found
 
 
-def select_diverse(items: list[dict], *, limit: int, id_key: str, group_key: str, group_cap: int = 1) -> list[dict]:
-    ranked = sorted(items, key=lambda item: item.get("published_at") or "", reverse=True)
+def select_diverse(items: list[dict], *, limit: int, id_key: str, group_key: str, group_cap: int = 1, preserve_order: bool = False) -> list[dict]:
+    ranked = list(items) if preserve_order else sorted(items, key=lambda item: item.get("published_at") or "", reverse=True)
     seen_ids = set()
     group_counts: dict[str, int] = {}
     kept = []
@@ -255,23 +255,48 @@ def _delta_label(source: dict, other: dict) -> str:
     return "다른 출처와 다른 점"
 
 
+def _view_text(source: dict) -> str:
+    text = (source.get("summary") or "").strip() or _point(source)
+    text = re.sub(r"\s+", " ", text)
+    if len(text) > 140:
+        text = text[:139].rstrip() + "…"
+    return text
+
+
+def _same_view(source: dict, other: dict) -> bool:
+    if {source.get("stance"), other.get("stance")} == {"up", "down"}:
+        return False
+    left = compact(_point(source))
+    right = compact(_point(other))
+    if not left or not right:
+        return False
+    return left == right or left in right or right in left
+
+
 def apply_deltas(sources: list[dict]) -> None:
     for source in sources:
-        other = _contrast_with(source, sources)
-        if other is None or not _point(source) or not _point(other):
+        video = str(source.get("id") or "").startswith("yt_")
+        others = [item for item in sources if item.get("id") != source.get("id")]
+        pool = [item for item in others if str(item.get("id") or "").startswith("yt_") == video] or others
+        mine = _view_text(source)
+        if not pool or not mine:
             source["delta"] = ""
             source["delta_label"] = ""
             continue
-        kind = "이 영상은" if str(source.get("id") or "").startswith("yt_") else "이 글은"
-        source["delta"] = (
-            f"「{other.get('title') or '다른 출처'}」은 {_point(other)} "
-            f"{kind} {_point(source)}"
-        )
+        kind = "이 영상은" if video else "이 글은"
+        same = [item for item in pool if _same_view(source, item)]
+        if len(same) == len(pool):
+            titles = "」, 「".join((item.get("title") or "다른 출처") for item in pool[:2])
+            source["delta_label"] = "다른 영상과 같은 점" if video else "다른 글과 같은 점"
+            source["delta"] = f"「{titles}」과 같은 말을 한다. {kind} {mine}"
+            continue
+        other = _contrast_with(source, pool) or pool[0]
         source["delta_label"] = _delta_label(source, other)
+        source["delta"] = f"{kind} {mine} 「{other.get('title') or '다른 출처'}」은 {_view_text(other)}"
 
 
 def _contrast_with(source: dict, sources: list[dict]) -> dict | None:
-    others = [item for item in sources if item.get("id") != source.get("id")]
+    others = [item for item in sources if item.get("id") != source.get("id") and not _same_view(source, item)]
     if not others:
         return None
     mine = set(source.get("issues") or [])
@@ -283,14 +308,8 @@ def _contrast_with(source: dict, sources: list[dict]) -> dict | None:
         same_topic = bool(mine & set(item.get("issues") or []))
         return (not opposite, same_point, not same_topic)
 
-    pool = others
-
-    pool.sort(key=rank)
-    best = pool[0]
-    same_topics = mine == set(best.get("issues") or [])
-    if compact(_point(best)) == my_point and same_topics:
-        return None
-    return best
+    others.sort(key=rank)
+    return others[0]
 
 
 def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> str:
@@ -303,8 +322,33 @@ def one_line(issues: list[dict], videos: list[dict], articles: list[dict]) -> st
     return "확인된 인용은 같은 쪽으로 모인다."
 
 
-def _finish_source(raw: dict, claims: list[dict], source_id: str) -> dict | None:
-    grounded = keep_grounded(claims, raw.get("text") or "")
+def _prefer_watchable(videos: list[dict], keyword: str = "") -> list[dict]:
+    kept = []
+    for video in videos:
+        duration = video.get("duration_sec") or 0
+        if 0 < duration < 45:
+            continue
+        kept.append(video)
+    tokens = [part for part in (keyword or "").split() if len(part) >= 2]
+
+    def rank(video: dict) -> int:
+        title = video.get("title") or ""
+        return sum(token in title for token in tokens)
+
+    kept.sort(key=rank, reverse=True)
+    short = [video for video in kept if 0 < (video.get("duration_sec") or 0) <= 360]
+    long = [video for video in kept if video not in short]
+    merged = []
+    while short or long:
+        if short:
+            merged.append(short.pop(0))
+        if long:
+            merged.append(long.pop(0))
+    return merged
+
+
+def _finish_source(raw: dict, claims: list[dict], source_id: str, *, trust: bool = False) -> dict | None:
+    grounded = list(claims) if trust else keep_grounded(claims, raw.get("text") or "")
     if not grounded:
         return None
     blob = " ".join(claim["quote"] for claim in grounded)
@@ -332,6 +376,8 @@ def build_brief(
     articles: list[dict] | None = None,
     videos: list[dict] | None = None,
     caption_fn=None,
+    video_fn=None,
+    compare_fn=None,
     extractor=None,
     skipped: list[str] | None = None,
     now: datetime | None = None,
@@ -341,9 +387,19 @@ def build_brief(
     caption_fn = caption_fn or (lambda _video_id: None)
     skipped = list(skipped or [])
     articles = [item for item in (articles or []) if within_window(item.get("published_at"), days, now)]
-    videos = [item for item in (videos or []) if within_window(item.get("published_at"), days, now)]
+    videos = _prefer_watchable(
+        [item for item in (videos or []) if within_window(item.get("published_at"), days, now)],
+        keyword,
+    )
     article_pool = select_diverse(articles, limit=max_articles, id_key="canonical_url", group_key="publisher", group_cap=2)
-    video_pool = select_diverse(videos, limit=max_videos, id_key="video_id", group_key="channel", group_cap=1)
+    video_pool = select_diverse(
+        videos,
+        limit=max(max_videos * 3, 12),
+        id_key="video_id",
+        group_key="channel",
+        group_cap=1,
+        preserve_order=True,
+    )
 
     ready_articles = []
     for index, article in enumerate(article_pool, start=1):
@@ -361,18 +417,39 @@ def build_brief(
 
     ready_videos = []
     captions_missing = 0
+    heard_count = 0
     for video in video_pool:
+        if len(ready_videos) >= max_videos:
+            break
         segments = caption_fn(video.get("video_id") or "")
-        if not segments:
-            captions_missing += 1
-            continue
-        text = "\n".join(segment.get("text") or "" for segment in segments)
-        raw = dict(video)
-        raw["text"] = text
-        finished = _finish_source(raw, extractor(text, segments), f"yt_{video.get('video_id')}")
-        if finished is None:
-            continue
         video_id = video.get("video_id") or ""
+        finished = None
+        caption_status = "ok"
+        scope = ""
+        if segments:
+            text = "\n".join(segment.get("text") or "" for segment in segments)
+            raw = dict(video)
+            raw["text"] = text
+            finished = _finish_source(raw, extractor(text, segments), f"yt_{video_id}")
+        else:
+            heard = video_fn(video) if video_fn else None
+            if heard:
+                scope = next((claim.get("heard_scope") for claim in heard if claim.get("heard_scope")), "")
+                heard_summary = next((claim.get("video_summary") for claim in heard if claim.get("video_summary")), "")
+                finished = _finish_source(video, heard, f"yt_{video_id}", trust=True)
+                if finished is not None and heard_summary:
+                    finished["summary"] = heard_summary
+                caption_status = "video"
+            else:
+                if getattr(video_fn, "stopped", False):
+                    break
+                captions_missing += 1
+        if finished is None:
+            if caption_status == "video":
+                captions_missing += 1
+            continue
+        if caption_status == "video":
+            heard_count += 1
         finished.update({
             "video_id": video_id,
             "url": video.get("url") or (f"https://youtu.be/{video_id}" if video_id else ""),
@@ -383,18 +460,35 @@ def build_brief(
             "thumbnail_url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else "",
             "language": video.get("language") or "",
             "subscriber_bucket": video.get("subscriber_bucket") or "unknown",
-            "caption_status": "ok",
-            "selected_because": "최근 업로드, 채널당 1개",
+            "caption_status": caption_status,
+            "heard_scope": scope,
+            "selected_because": "모델이 공개 영상을 봄" if caption_status == "video" else "최근 업로드, 채널당 1개",
         })
         ready_videos.append(finished)
 
+    if heard_count:
+        skipped.append(f"youtube_video: 자막 대신 모델이 영상 {heard_count}개를 보고 정리함")
     if captions_missing:
-        if getattr(caption_fn, "reason", "") == "blocked":
+        if video_fn:
+            skipped.append(f"youtube_video: 영상 {captions_missing}개는 제한 시간 안에 의견을 받지 못해 건너뜀")
+        elif getattr(caption_fn, "reason", "") == "blocked":
             skipped.append(f"youtube_captions: 유튜브가 이 네트워크의 자막 요청을 막아 {captions_missing}개를 건너뜀")
         else:
             skipped.append(f"youtube_captions: 자막을 가져오지 못함 {captions_missing}개")
+    note = getattr(video_fn, "note", "") if video_fn else ""
+    if note:
+        skipped.append(note)
     sources = ready_videos + ready_articles
     apply_deltas(sources)
+    if compare_fn and len(ready_videos) >= 2:
+        updates = compare_fn(ready_videos) or {}
+        for video in ready_videos:
+            item = updates.get(video.get("video_id") or "") or updates.get(video.get("id") or "")
+            if not item or not item.get("delta"):
+                continue
+            video["delta"] = item["delta"]
+            if item.get("label"):
+                video["delta_label"] = item["label"]
     issues = build_issues(sources)
     generated = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     report_id = hashlib.sha256(f"{keyword}|{generated}".encode()).hexdigest()[:12]

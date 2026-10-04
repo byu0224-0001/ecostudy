@@ -305,6 +305,267 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertTrue(any(issue["id"] == "points" for issue in split["issues"]))
         self.assertEqual(split["one_line"], "출처마다 짚는 문장이 다르다.")
 
+    def test_video_understanding_keeps_a_card_without_captions(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = [{
+            "video_id": "watch11",
+            "title": "공급 영상",
+            "channel": "데스크",
+            "published_at": "2026-09-28",
+            "duration_sec": 120,
+            "url": "https://youtu.be/watch11",
+        }]
+
+        def watch(_video):
+            return [{
+                "quote": "국채 발행이 늘어 금리는 상승 압력이 있다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "공급이 금리를 밀어 올린다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 15,
+                "stance": "up",
+                "heard_scope": "영상 전체",
+            }]
+
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+        )
+        self.assertEqual(report["pool"]["youtube_kept"], 1)
+        self.assertEqual(report["videos"][0]["caption_status"], "video")
+        self.assertIn("모델이 영상 1개를 보고 정리함", " ".join(report["skipped"]))
+        page = render_report(report, "")
+        self.assertIn("모델이 영상 전체에서 들은 말입니다.", page)
+        self.assertIn("0:15", page)
+
+        called = {"n": 0}
+
+        def unused(_video):
+            called["n"] += 1
+            return None
+
+        captioned = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: [{"text": "국채 발행이 늘어 금리는 상승 압력이 있다.", "start": 12}],
+            video_fn=unused,
+            now=now,
+        )
+        self.assertEqual(called["n"], 0)
+        self.assertEqual(captioned["videos"][0]["caption_status"], "ok")
+
+    def test_video_claims_accept_a_bare_list(self):
+        from radar.extract import _video_claims, body_window
+
+        payload = {"candidates": [{"content": {"parts": [{"text": json.dumps([
+            {"quote": "국채 금리가 공급 때문에 올랐다.", "opinion": "공급이 민다", "stance": "up", "start_sec": 4},
+        ])}]}}]}
+        claims = _video_claims(payload)
+        self.assertEqual(claims[0]["start_sec"], 4)
+        self.assertEqual(claims[0]["quote_status"], "video")
+        wrapped = {"candidates": [{"content": {"parts": [{"text": json.dumps([{
+            "summary": "매수세보다 발행이 많아 금리가 올랐다.",
+            "claims": [{"quote": "발행량은 많은데 매입세가 약해 국채 금리가 높아졌다.", "opinion": "수급이 금리를 밀어 올린다.", "stance": "support", "start_sec": 167}],
+        }])}]}}]}
+        heard = _video_claims(wrapped)
+        self.assertEqual(heard[0]["start_sec"], 167)
+        self.assertEqual(heard[0]["stance"], "up")
+        self.assertIn("매수세", heard[0]["video_summary"])
+        self.assertEqual(body_window(120), (0, 120, "영상 전체"))
+        self.assertEqual(body_window(1029), (30, 240, "0:30–4:00"))
+
+    def test_matching_video_points_say_they_match(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = []
+        for index, video_id in enumerate(("same1", "same2")):
+            videos.append({
+                "video_id": video_id,
+                "title": f"같은 결론 {index}",
+                "channel": f"채널{index}",
+                "published_at": "2026-09-28",
+                "duration_sec": 400,
+                "url": f"https://youtu.be/{video_id}",
+            })
+
+        def watch(_video):
+            return [{
+                "quote": "발행량은 많은데 매입세가 약해 국채 금리가 높아졌다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "수급이 국채 금리를 밀어 올린다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 167,
+                "stance": "up",
+                "heard_scope": "0:30–4:00",
+                "video_summary": "발행이 매수보다 많아 국채 금리가 올랐다.",
+            }]
+
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+        )
+        self.assertEqual(report["videos"][0]["delta_label"], "다른 영상과 같은 점")
+        self.assertIn("같은 말을 한다", report["videos"][0]["delta"])
+        page = render_report(report, "")
+        self.assertIn("핵심", page)
+        self.assertIn("2:47", page)
+
+    def test_long_videos_stay_beside_short_ones(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = [
+            {
+                "video_id": "short11",
+                "title": "짧은 국채 금리",
+                "channel": "짧은채널",
+                "published_at": "2026-09-28",
+                "duration_sec": 120,
+                "url": "https://youtu.be/short11",
+            },
+            {
+                "video_id": "long222",
+                "title": "긴 국채 금리 해설",
+                "channel": "긴채널",
+                "published_at": "2026-09-27",
+                "duration_sec": 1002,
+                "url": "https://youtu.be/long222",
+            },
+            {
+                "video_id": "tiny333",
+                "title": "국채 쇼츠",
+                "channel": "쇼츠",
+                "published_at": "2026-09-29",
+                "duration_sec": 20,
+                "url": "https://youtu.be/tiny333",
+            },
+        ]
+
+        def captions(_video_id):
+            return [{"text": "국채 발행이 늘어 금리는 상승 압력이 있다.", "start": 8}]
+
+        report = build_brief("미국 국채 금리", articles=[], videos=videos, caption_fn=captions, now=now, max_videos=6)
+        ids = [video["video_id"] for video in report["videos"]]
+        self.assertIn("long222", ids)
+        self.assertIn("short11", ids)
+        self.assertNotIn("tiny333", ids)
+        self.assertEqual(report["pool"]["youtube_seen"], 2)
+
+    def test_failed_watches_do_not_stop_the_card_count(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = []
+        for index, video_id in enumerate(("fail1", "fail2", "keep1", "keep2")):
+            videos.append({
+                "video_id": video_id,
+                "title": f"미국 국채 금리 {video_id}",
+                "channel": f"채널{index}",
+                "published_at": "",
+                "duration_sec": 400 + index,
+                "url": f"https://youtu.be/{video_id}",
+            })
+
+        def watch(video):
+            if video["video_id"].startswith("fail"):
+                return None
+            return [{
+                "quote": "미국 국채 금리는 발행 물량에 따라 움직인다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "물량이 금리를 움직인다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 9,
+                "stance": "up",
+                "heard_scope": "처음 90초",
+            }]
+
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+            max_videos=2,
+        )
+        self.assertEqual([video["video_id"] for video in report["videos"]], ["keep1", "keep2"])
+        self.assertIn("제한 시간 안에 의견을 받지 못해 건너뜀", " ".join(report["skipped"]))
+
+    def test_quota_does_not_count_later_videos_as_timeouts(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = []
+        for index, video_id in enumerate(("ok1", "stop2", "later3")):
+            videos.append({
+                "video_id": video_id,
+                "title": f"미국 국채 금리 {video_id}",
+                "channel": f"채널{index}",
+                "published_at": "",
+                "duration_sec": 500,
+                "url": f"https://youtu.be/{video_id}",
+            })
+
+        def watch(video):
+            if video["video_id"] == "stop2":
+                watch.stopped = True
+                watch.note = "gemini: 요청 한도로 이후 영상은 보지 않음"
+                return None
+            if video["video_id"] != "ok1":
+                raise AssertionError(video["video_id"])
+            return [{
+                "quote": "미국 국채 금리는 발행 물량에 따라 움직인다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "물량이 금리를 움직인다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 9,
+                "stance": "up",
+                "heard_scope": "처음 90초",
+            }]
+
+        watch.stopped = False
+        watch.note = ""
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+            max_videos=6,
+        )
+        self.assertEqual([video["video_id"] for video in report["videos"]], ["ok1"])
+        self.assertNotIn("제한 시간", " ".join(report["skipped"]))
+        self.assertIn("요청 한도로 이후 영상은 보지 않음", " ".join(report["skipped"]))
+
+    def test_video_quote_accepts_treasury_wording(self):
+        from radar.extract import _video_quote_ok
+
+        self.assertTrue(_video_quote_ok("미국 국채의 가격이 내려간 상태입니다.", "미국 국채 금리"))
+        self.assertFalse(_video_quote_ok("짧은 말", "미국 국채 금리"))
+
     def test_grounding_keeps_https_chunks_only(self):
         payload = {"candidates": [{"groundingMetadata": {"groundingChunks": [
             {"web": {"uri": "https://news.example/a", "title": "예"}},
