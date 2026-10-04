@@ -365,7 +365,7 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual(captioned["videos"][0]["caption_status"], "ok")
 
     def test_video_claims_accept_a_bare_list(self):
-        from radar.extract import _video_claims
+        from radar.extract import _video_claims, body_window
 
         payload = {"candidates": [{"content": {"parts": [{"text": json.dumps([
             {"quote": "국채 금리가 공급 때문에 올랐다.", "opinion": "공급이 민다", "stance": "up", "start_sec": 4},
@@ -373,6 +373,60 @@ class ArticleBodyTests(unittest.TestCase):
         claims = _video_claims(payload)
         self.assertEqual(claims[0]["start_sec"], 4)
         self.assertEqual(claims[0]["quote_status"], "video")
+        wrapped = {"candidates": [{"content": {"parts": [{"text": json.dumps([{
+            "summary": "매수세보다 발행이 많아 금리가 올랐다.",
+            "claims": [{"quote": "발행량은 많은데 매입세가 약해 국채 금리가 높아졌다.", "opinion": "수급이 금리를 밀어 올린다.", "stance": "support", "start_sec": 167}],
+        }])}]}}]}
+        heard = _video_claims(wrapped)
+        self.assertEqual(heard[0]["start_sec"], 167)
+        self.assertEqual(heard[0]["stance"], "up")
+        self.assertIn("매수세", heard[0]["video_summary"])
+        self.assertEqual(body_window(120), (0, 120, "영상 전체"))
+        self.assertEqual(body_window(1029), (30, 240, "0:30–4:00"))
+
+    def test_matching_video_points_say_they_match(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = []
+        for index, video_id in enumerate(("same1", "same2")):
+            videos.append({
+                "video_id": video_id,
+                "title": f"같은 결론 {index}",
+                "channel": f"채널{index}",
+                "published_at": "2026-09-28",
+                "duration_sec": 400,
+                "url": f"https://youtu.be/{video_id}",
+            })
+
+        def watch(_video):
+            return [{
+                "quote": "발행량은 많은데 매입세가 약해 국채 금리가 높아졌다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "수급이 국채 금리를 밀어 올린다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 167,
+                "stance": "up",
+                "heard_scope": "0:30–4:00",
+                "video_summary": "발행이 매수보다 많아 국채 금리가 올랐다.",
+            }]
+
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+        )
+        self.assertEqual(report["videos"][0]["delta_label"], "다른 영상과 같은 점")
+        self.assertIn("같은 말을 한다", report["videos"][0]["delta"])
+        page = render_report(report, "")
+        self.assertIn("핵심", page)
+        self.assertIn("2:47", page)
 
     def test_long_videos_stay_beside_short_ones(self):
         now = datetime(2026, 10, 1, tzinfo=timezone.utc)

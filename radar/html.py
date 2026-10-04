@@ -146,7 +146,7 @@ def _video_card(video: dict) -> str:
     bits.append(f'<h3>{_esc(video.get("title") or "")}</h3>')
     bits.append(_keywords(video.get("keywords") or []))
     if video.get("summary"):
-        bits.append(f'<p class="summary">{_esc(video.get("summary") or "")}</p>')
+        bits.append(f'<p class="summary"><span class="delta-label">핵심</span>{_esc(video.get("summary") or "")}</p>')
     if video.get("delta"):
         bits.append(
             f'<div class="delta"><span class="delta-label">{_esc(video.get("delta_label") or "다른 영상과 다른 점")}</span>'

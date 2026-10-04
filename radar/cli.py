@@ -5,7 +5,7 @@ from pathlib import Path
 
 from radar.collect import collect_articles, collect_videos, fetch_caption_segments
 from radar.config import load_settings, missing_key_names
-from radar.extract import gemini_video_claims, make_extractor
+from radar.extract import gemini_video_claims, gemini_video_deltas, make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
 from radar.store import connect, save_brief
@@ -114,6 +114,12 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
     watch.note = ""
     watch.stopped = False
 
+    def compare(videos: list[dict]):
+        try:
+            return gemini_video_deltas(videos, settings)
+        except Exception:
+            return {}
+
     return build_brief(
         keyword,
         days=days,
@@ -123,6 +129,7 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
         videos=videos,
         caption_fn=captions,
         video_fn=watch if settings.gemini_key else None,
+        compare_fn=compare if settings.gemini_key else None,
         extractor=make_extractor(settings),
         skipped=skipped,
     )
