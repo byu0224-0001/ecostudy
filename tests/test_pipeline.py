@@ -456,6 +456,56 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual([video["video_id"] for video in report["videos"]], ["keep1", "keep2"])
         self.assertIn("제한 시간 안에 의견을 받지 못해 건너뜀", " ".join(report["skipped"]))
 
+    def test_quota_does_not_count_later_videos_as_timeouts(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        videos = []
+        for index, video_id in enumerate(("ok1", "stop2", "later3")):
+            videos.append({
+                "video_id": video_id,
+                "title": f"미국 국채 금리 {video_id}",
+                "channel": f"채널{index}",
+                "published_at": "",
+                "duration_sec": 500,
+                "url": f"https://youtu.be/{video_id}",
+            })
+
+        def watch(video):
+            if video["video_id"] == "stop2":
+                watch.stopped = True
+                watch.note = "gemini: 요청 한도로 이후 영상은 보지 않음"
+                return None
+            if video["video_id"] != "ok1":
+                raise AssertionError(video["video_id"])
+            return [{
+                "quote": "미국 국채 금리는 발행 물량에 따라 움직인다.",
+                "fact": "",
+                "interpretation": "",
+                "opinion": "물량이 금리를 움직인다.",
+                "forecast": "",
+                "implication": "",
+                "evidence": [],
+                "assumptions": [],
+                "quote_status": "video",
+                "start_sec": 9,
+                "stance": "up",
+                "heard_scope": "처음 90초",
+            }]
+
+        watch.stopped = False
+        watch.note = ""
+        report = build_brief(
+            "미국 국채 금리",
+            articles=[],
+            videos=videos,
+            caption_fn=lambda _id: None,
+            video_fn=watch,
+            now=now,
+            max_videos=6,
+        )
+        self.assertEqual([video["video_id"] for video in report["videos"]], ["ok1"])
+        self.assertNotIn("제한 시간", " ".join(report["skipped"]))
+        self.assertIn("요청 한도로 이후 영상은 보지 않음", " ".join(report["skipped"]))
+
     def test_video_quote_accepts_treasury_wording(self):
         from radar.extract import _video_quote_ok
 

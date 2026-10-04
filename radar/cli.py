@@ -107,6 +107,7 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
             watch.note = note
             if "한도" in note:
                 watch.stopped = True
+                watch.note = "gemini: 요청 한도로 이후 영상은 보지 않음"
         return None
 
     watch.count = 0

@@ -418,6 +418,8 @@ def build_brief(
                 finished = _finish_source(video, heard, f"yt_{video_id}", trust=True)
                 caption_status = "video"
             else:
+                if getattr(video_fn, "stopped", False):
+                    break
                 captions_missing += 1
         if finished is None:
             if caption_status == "video":
