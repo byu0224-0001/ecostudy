@@ -610,6 +610,16 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertIn("암호", body.decode())
 
+    def test_vercel_keeps_one_video_and_one_article(self):
+        from radar.httpapp import card_limits
+
+        os.environ["VERCEL"] = "1"
+        try:
+            self.assertEqual(card_limits(), (1, 1))
+        finally:
+            os.environ.pop("VERCEL", None)
+        self.assertEqual(card_limits(), (6, 6))
+
     def test_empty_keyword_does_not_start_a_brief(self):
         from radar.httpapp import dispatch
 

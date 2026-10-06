@@ -1,4 +1,5 @@
 .git
+.vercel
 .env
 .env.local
 data

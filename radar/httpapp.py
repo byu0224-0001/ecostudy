@@ -20,7 +20,7 @@ WEB_TYPES = {
 
 def card_limits() -> tuple[int, int]:
     if os.environ.get("VERCEL"):
-        return 3, 2
+        return 1, 1
     return 6, 6
 
 

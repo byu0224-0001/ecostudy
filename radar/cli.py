@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -86,6 +87,8 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
         skipped.extend(video_skips)
 
     def captions(video_id: str):
+        if os.environ.get("VERCEL"):
+            return None
         try:
             return fetch_caption_segments(video_id)
         except Exception as exc:

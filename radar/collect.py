@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -369,7 +370,7 @@ def youtube_ytdlp_search(query: str, limit: int = 8) -> list[dict]:
         check=True,
         capture_output=True,
         text=True,
-        timeout=40,
+        timeout=18 if os.environ.get("VERCEL") else 40,
     )
     return parse_ytdlp(json.loads(completed.stdout))
 
@@ -490,7 +491,8 @@ def articles_from_pages(links: list[dict], fetch_html, limit: int = 4) -> tuple[
 
 def fetch_article_html(url: str) -> tuple[str, str]:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    timeout = 8 if os.environ.get("VERCEL") else 15
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         final_url = response.geturl()
         raw = response.read(400_000)
     return final_url, raw.decode("utf-8", "replace")
@@ -499,7 +501,8 @@ def fetch_article_html(url: str) -> tuple[str, str]:
 def collect_articles(keyword: str, days: int, settings: Settings, queries: list[str]) -> tuple[list[dict], list[str]]:
     articles: list[dict] = []
     skipped: list[str] = []
-    for query in queries:
+    short = bool(os.environ.get("VERCEL"))
+    for query in (queries[:1] if short else queries):
         try:
             articles.extend(google_news(query, days))
         except Exception:
@@ -509,7 +512,7 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
     for query in [keyword, *queries]:
         if query not in frames and any("\uac00" <= char <= "\ud7a3" for char in query):
             frames.append(query)
-    frames = frames[:7]
+    frames = frames[:1] if short else frames[:7]
     groups: list[list[dict]] = []
     now = datetime.now(timezone.utc)
     if not settings.naver_ready:
@@ -541,7 +544,7 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
         }
         for item in mix_topic_links(groups, keyword, days, now)
     ]
-    pages, page_skips = articles_from_pages(links, fetch_article_html, limit=6)
+    pages, page_skips = articles_from_pages(links, fetch_article_html, limit=2 if short else 6)
     articles.extend(pages)
     skipped.extend(page_skips)
     return articles, skipped
@@ -560,14 +563,16 @@ def collect_videos(queries: list[str], days: int, settings: Settings) -> tuple[l
         return videos, skipped
     keyword = queries[0] if queries else ""
     frames = [keyword]
-    for suffix in ("전망", "해설", "상승"):
-        framed = f"{keyword} {suffix}".strip()
-        if framed not in frames:
-            frames.append(framed)
+    if not os.environ.get("VERCEL"):
+        for suffix in ("전망", "해설", "상승"):
+            framed = f"{keyword} {suffix}".strip()
+            if framed not in frames:
+                frames.append(framed)
+    search_limit = 4 if os.environ.get("VERCEL") else 8
     seen = set()
     for query in frames:
         try:
-            found = youtube_ytdlp_search(query, limit=8)
+            found = youtube_ytdlp_search(query, limit=search_limit)
         except FileNotFoundError:
             skipped.append("youtube: yt-dlp 없음")
             break

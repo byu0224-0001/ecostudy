@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -188,24 +189,28 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         ]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
+    on_vercel = bool(os.environ.get("VERCEL"))
+    watch_timeout = 18 if on_vercel else 32
     models = []
     if _VIDEO_MODEL_CHOICE and _VIDEO_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:
         models = [_VIDEO_MODEL_CHOICE]
     else:
-        for model in (settings.gemini_model, *VIDEO_WATCH_MODELS):
+        order = ("gemini-3.6-flash", settings.gemini_model, *VIDEO_WATCH_MODELS) if on_vercel else (settings.gemini_model, *VIDEO_WATCH_MODELS)
+        for model in order:
             if model and model not in models and model not in _VIDEO_MODELS_SKIP:
                 models.append(model)
     if not models:
         return None, "gemini: 요청 한도"
     note = "youtube_video: 영상을 열지 못함"
     attempts = 0
+    attempt_cap = 2 if on_vercel else 3
     for model in models:
-        if attempts >= 3:
+        if attempts >= attempt_cap:
             break
-        payload, note = _generate(settings, body, timeout=32, model=model)
+        payload, note = _generate(settings, body, timeout=watch_timeout, model=model)
         attempts += 1
-        if note == "gemini: 잠시 혼잡":
-            payload, note = _generate(settings, body, timeout=32, model=model)
+        if note == "gemini: 잠시 혼잡" and not on_vercel:
+            payload, note = _generate(settings, body, timeout=watch_timeout, model=model)
             attempts += 1
         if note == "gemini: 요청 한도":
             _VIDEO_MODELS_SKIP.add(model)
