@@ -8,7 +8,7 @@ from radar.config import load_settings, missing_key_names
 from radar.extract import gemini_video_claims, gemini_video_deltas, make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
-from radar.store import connect, save_brief
+from radar.store import connect, default_path, save_brief
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         html_path.parent.mkdir(parents=True, exist_ok=True)
         html_path.write_text(render_report(report, prefix), encoding="utf-8")
         print(f"html: {html_path}", file=sys.stderr)
-    database = connect(settings.root / "data" / "radar.sqlite")
+    database = connect(default_path(settings.root))
     save_brief(database, report)
     print(f"id: {report['id']}", file=sys.stderr)
     return 0

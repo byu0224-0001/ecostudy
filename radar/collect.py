@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
@@ -344,15 +345,27 @@ def youtube_api_search(query: str, days: int, settings: Settings, fetch=fetch_by
     return parse_youtube_api(json.loads(fetch(url)))
 
 
+def ytdlp_prefix(which=shutil.which, home: Path | None = None) -> list[str]:
+    binary = which("yt-dlp")
+    if not binary:
+        local = (home or Path.home()) / ".local" / "bin" / "yt-dlp"
+        if local.is_file():
+            binary = str(local)
+    if binary:
+        return [binary]
+    return [sys.executable, "-m", "yt_dlp"]
+
+
 def youtube_ytdlp_search(query: str, limit: int = 8) -> list[dict]:
-    binary = shutil.which("yt-dlp")
-    if binary is None:
-        local = Path.home() / ".local" / "bin" / "yt-dlp"
-        binary = str(local) if local.is_file() else None
-    if binary is None:
-        raise FileNotFoundError("yt-dlp")
     completed = subprocess.run(
-        [binary, "--flat-playlist", "--dump-single-json", "--playlist-end", str(limit), "--no-warnings", f"ytsearch{limit}:{query}"],
+        ytdlp_prefix() + [
+            "--flat-playlist",
+            "--dump-single-json",
+            "--playlist-end",
+            str(limit),
+            "--no-warnings",
+            f"ytsearch{limit}:{query}",
+        ],
         check=True,
         capture_output=True,
         text=True,

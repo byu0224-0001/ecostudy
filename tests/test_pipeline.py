@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -575,6 +577,45 @@ class ArticleBodyTests(unittest.TestCase):
         links = grounding_links(payload)
         self.assertEqual(len(links), 1)
         self.assertEqual(links[0]["url"], "https://news.example/a")
+
+    def test_missing_ytdlp_binary_uses_the_module(self):
+        from radar.collect import ytdlp_prefix
+
+        prefix = ytdlp_prefix(which=lambda _name: None, home=Path("/no/such/home"))
+        self.assertEqual(prefix, [sys.executable, "-m", "yt_dlp"])
+
+    def test_missing_server_report_uses_the_browser_copy(self):
+        from radar.httpapp import dispatch
+
+        status, content_type, body = dispatch("GET", "/r/abc123", b"", root=Path("/workspace"))
+        text = body.decode()
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn("radar-html-abc123", text)
+        self.assertIn("localStorage", text)
+
+    def test_public_search_rejects_a_wrong_password(self):
+        from radar.httpapp import dispatch
+
+        os.environ["RADAR_PASSWORD"] = "test-only-password"
+        try:
+            status, _, body = dispatch(
+                "POST",
+                "/brief",
+                b'{"keyword":"\\uc0c1\\uad00\\uc5c6\\ub294\\ud0a4\\uc6cc\\ub4dc","password":"no"}',
+                root=Path("/workspace"),
+            )
+        finally:
+            os.environ.pop("RADAR_PASSWORD", None)
+        self.assertEqual(status, 401)
+        self.assertIn("암호", body.decode())
+
+    def test_empty_keyword_does_not_start_a_brief(self):
+        from radar.httpapp import dispatch
+
+        status, _, body = dispatch("POST", "/brief", b'{"keyword":"  "}', root=Path("/workspace"))
+        self.assertEqual(status, 400)
+        self.assertIn("키워드", body.decode())
 
 
 if __name__ == "__main__":
