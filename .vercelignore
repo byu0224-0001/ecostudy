@@ -1,11 +1,8 @@
 .git
 .vercel
-.env
 .env.local
-data
 __pycache__
 *.pyc
 .venv
 venv
-tests
 *.log
