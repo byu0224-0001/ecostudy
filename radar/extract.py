@@ -24,7 +24,16 @@ def make_extractor(settings: Settings):
     return extract
 
 
+TEXT_MODELS = (
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+)
+_TEXT_MODEL_CHOICE = ""
+
+
 def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
+    global _TEXT_MODEL_CHOICE
     excerpt = (text or "")[:8000]
     if not excerpt.strip():
         return None
@@ -37,17 +46,34 @@ def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
         '{"claims":[{"quote":"","fact":"","interpretation":"","opinion":"","forecast":"","implication":"","evidence":[],"assumptions":[],"stance":"unknown"}]}\n\n'
         f"원문:\n{excerpt}"
     )
-    payload, _note = _generate(settings, {
+    body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
-    })
+    }
+    if _TEXT_MODEL_CHOICE and _TEXT_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:
+        models = [_TEXT_MODEL_CHOICE]
+    else:
+        models = []
+        for model in (settings.gemini_model, *TEXT_MODELS):
+            if model and model not in models and model not in _VIDEO_MODELS_SKIP:
+                models.append(model)
+    payload = None
+    for model in models[:4]:
+        payload, note = _generate(settings, body, model=model)
+        if note == "gemini: 잠시 혼잡":
+            payload, note = _generate(settings, body, model=model)
+        if note == "gemini: 요청 한도":
+            _VIDEO_MODELS_SKIP.add(model)
+            payload = None
+            continue
+        if payload is None:
+            continue
+        _TEXT_MODEL_CHOICE = model
+        break
     if payload is None:
         return None
-    try:
-        parts = payload["candidates"][0]["content"]["parts"]
-        raw = next(part["text"] for part in reversed(parts) if part.get("text"))
-        parsed = json.loads(raw)
-    except Exception:
+    parsed = _json_text(payload)
+    if not isinstance(parsed, dict):
         return None
     claims = []
     for item in (parsed.get("claims") or [])[:3]:
@@ -340,7 +366,7 @@ def _video_quote_ok(quote: str, keyword: str) -> bool:
     text = (quote or "").strip()
     if len(text) < 18:
         return False
-    if text.startswith("(") and "기자" in text[:48]:
+    if "기자" in text[:48] and text[:1] in "([":
         return False
     if _usable_quote(text):
         return True
@@ -352,7 +378,7 @@ def _video_quote_ok(quote: str, keyword: str) -> bool:
 def _usable_quote(quote: str) -> bool:
     if len(quote) < 24:
         return False
-    if quote.startswith("(") and "기자" in quote[:48]:
+    if "기자" in quote[:48] and quote[:1] in "([":
         return False
     return any(word.lower() in quote.lower() for word in TOPIC_WORDS + STANCE_WORDS)
 

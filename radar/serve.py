@@ -13,10 +13,11 @@ WEB_FILES = {
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".svg": "image/svg+xml",
+    ".webmanifest": "application/manifest+json",
 }
 
 
-def serve(root: Path, port: int) -> None:
+def serve(root: Path, port: int, host: str = "127.0.0.1") -> None:
     settings = load_settings(root)
     web = root / "web"
     database_path = root / "data" / "radar.sqlite"
@@ -93,6 +94,6 @@ def serve(root: Path, port: int) -> None:
             self.end_headers()
             self.wfile.write(data)
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"http://127.0.0.1:{port}")
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"http://{host}:{port}")
     server.serve_forever()

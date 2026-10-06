@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import subprocess
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import urllib.request
@@ -346,8 +347,8 @@ def youtube_api_search(query: str, days: int, settings: Settings, fetch=fetch_by
 def youtube_ytdlp_search(query: str, limit: int = 8) -> list[dict]:
     binary = shutil.which("yt-dlp")
     if binary is None:
-        local = "/home/ubuntu/.local/bin/yt-dlp"
-        binary = local if shutil.os.path.exists(local) else None
+        local = Path.home() / ".local" / "bin" / "yt-dlp"
+        binary = str(local) if local.is_file() else None
     if binary is None:
         raise FileNotFoundError("yt-dlp")
     completed = subprocess.run(
@@ -554,6 +555,9 @@ def collect_videos(queries: list[str], days: int, settings: Settings) -> tuple[l
     for query in frames:
         try:
             found = youtube_ytdlp_search(query, limit=8)
+        except FileNotFoundError:
+            skipped.append("youtube: yt-dlp 없음")
+            break
         except Exception:
             continue
         for video in found:

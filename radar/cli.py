@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
 
     serve = sub.add_parser("serve", help="검색 화면을 로컬에서 엽니다.")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--root", default=".")
 
     doctor = sub.add_parser("doctor", help="없는 키 이름만 보여 줍니다.")
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "serve":
         from radar.serve import serve as run_server
-        run_server(Path(args.root), args.port)
+        run_server(Path(args.root), args.port, args.host)
         return 0
     settings = load_settings(Path(args.root))
     report = run_brief(
