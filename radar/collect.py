@@ -1,20 +1,27 @@
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
+import threading
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
-from radar.config import Settings
+from radar.config import Settings, on_hosted
 from radar.textutil import strip_html
 
 USER_AGENT = "OpinionRadar/0.1 (personal research)"
 
 
-def fetch_bytes(url: str, headers: dict | None = None, timeout: int = 20) -> bytes:
+def fetch_bytes(url: str, headers: dict | None = None, timeout: int | None = None) -> bytes:
+    if timeout is None:
+        timeout = 6 if on_hosted() else 20
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read()
@@ -312,6 +319,112 @@ def parse_google_cse(payload: dict) -> list[dict]:
     return articles
 
 
+def parse_openai_citations(payload: dict) -> list[dict]:
+    articles = []
+    seen = set()
+
+    def add(url: str, title: str) -> None:
+        link = (url or "").split("?", 1)[0].strip()
+        if not link.startswith("https://") or link in seen:
+            return
+        host = urllib.parse.urlparse(link).netloc.removeprefix("www.")
+        if any(host == name or host.endswith("." + name) for name in _SKIP_HOSTS):
+            return
+        seen.add(link)
+        cleaned = strip_html(title or "") or host
+        articles.append({
+            "title": cleaned,
+            "publisher": host or "OpenAI",
+            "canonical_url": link,
+            "published_at": "",
+            "section": "column" if any(word in cleaned for word in ("칼럼", "오피니언", "사설", "기고", "column")) else "news",
+            "text": cleaned,
+        })
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "url_citation":
+                inner = node.get("url_citation") if isinstance(node.get("url_citation"), dict) else node
+                add(inner.get("url") or "", inner.get("title") or "")
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+    return articles
+
+
+def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[list[dict], str]:
+    if not settings.openai_ready:
+        return [], "openai: 키 없음"
+    body = {
+        "model": settings.openai_model or "gpt-6.1-sol",
+        "reasoning": {"effort": "low"},
+        "tools": [{
+            "type": "web_search",
+            "external_web_access": True,
+            "search_context_size": "low",
+            "user_location": {"type": "approximate", "country": "KR", "timezone": "Asia/Seoul"},
+        }],
+        "max_output_tokens": 500,
+        "input": (
+            f"키워드 '{keyword}', 최근 {int(days)}일. "
+            "한국 포털 시세 기사 말고 칼럼, 리포트, 영문 해설 중에서 "
+            "재정·물가·연준·수급처럼 원인이 다른 글의 본문 주소만 찾아라. "
+            "시세 마감 숫자만 있는 글은 빼라."
+        ),
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body).encode(),
+        headers={
+            "Authorization": f"Bearer {settings.openai_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    wait = 16 if on_hosted() else 22
+
+    def _post() -> dict:
+        with urllib.request.urlopen(request, timeout=wait) as response:
+            return json.loads(response.read().decode())
+
+    if on_hosted():
+        box: dict = {}
+
+        def run() -> None:
+            try:
+                box["payload"] = _post()
+            except urllib.error.HTTPError as exc:
+                box["code"] = exc.code
+            except Exception:
+                box["code"] = 0
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        thread.join(wait)
+        if "payload" not in box:
+            if box.get("code") == 429:
+                return [], "openai: 요청 한도"
+            return [], "openai: 응답 실패"
+        payload = box["payload"]
+    else:
+        try:
+            payload = _post()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                return [], "openai: 요청 한도"
+            return [], "openai: 응답 실패"
+        except Exception:
+            return [], "openai: 응답 실패"
+    links = parse_openai_citations(payload)
+    if not links:
+        return [], "openai: 기사 링크 없음"
+    return links[:6], ""
+
+
 def google_cse(query: str, days: int, settings: Settings, fetch=fetch_bytes) -> list[dict]:
     korean = any("\uac00" <= char <= "\ud7a3" for char in query)
     params = {
@@ -343,19 +456,31 @@ def youtube_api_search(query: str, days: int, settings: Settings, fetch=fetch_by
     return parse_youtube_api(json.loads(fetch(url)))
 
 
+def ytdlp_prefix(which=shutil.which, home: Path | None = None) -> list[str]:
+    binary = which("yt-dlp")
+    if not binary:
+        local = (home or Path.home()) / ".local" / "bin" / "yt-dlp"
+        if local.is_file():
+            binary = str(local)
+    if binary:
+        return [binary]
+    return [sys.executable, "-m", "yt_dlp"]
+
+
 def youtube_ytdlp_search(query: str, limit: int = 8) -> list[dict]:
-    binary = shutil.which("yt-dlp")
-    if binary is None:
-        local = "/home/ubuntu/.local/bin/yt-dlp"
-        binary = local if shutil.os.path.exists(local) else None
-    if binary is None:
-        raise FileNotFoundError("yt-dlp")
     completed = subprocess.run(
-        [binary, "--flat-playlist", "--dump-single-json", "--playlist-end", str(limit), "--no-warnings", f"ytsearch{limit}:{query}"],
+        ytdlp_prefix() + [
+            "--flat-playlist",
+            "--dump-single-json",
+            "--playlist-end",
+            str(limit),
+            "--no-warnings",
+            f"ytsearch{limit}:{query}",
+        ],
         check=True,
         capture_output=True,
         text=True,
-        timeout=40,
+        timeout=12 if on_hosted() else 40,
     )
     return parse_ytdlp(json.loads(completed.stdout))
 
@@ -476,7 +601,8 @@ def articles_from_pages(links: list[dict], fetch_html, limit: int = 4) -> tuple[
 
 def fetch_article_html(url: str) -> tuple[str, str]:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    timeout = 8 if on_hosted() else 15
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         final_url = response.geturl()
         raw = response.read(400_000)
     return final_url, raw.decode("utf-8", "replace")
@@ -485,7 +611,8 @@ def fetch_article_html(url: str) -> tuple[str, str]:
 def collect_articles(keyword: str, days: int, settings: Settings, queries: list[str]) -> tuple[list[dict], list[str]]:
     articles: list[dict] = []
     skipped: list[str] = []
-    for query in queries:
+    short = on_hosted()
+    for query in ([] if short else queries):
         try:
             articles.extend(google_news(query, days))
         except Exception:
@@ -495,7 +622,11 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
     for query in [keyword, *queries]:
         if query not in frames and any("\uac00" <= char <= "\ud7a3" for char in query):
             frames.append(query)
-    frames = frames[:7]
+    if short:
+        column = f"{keyword} 칼럼".strip()
+        frames = [keyword] if column == keyword else [keyword, column]
+    else:
+        frames = frames[:7]
     groups: list[list[dict]] = []
     now = datetime.now(timezone.utc)
     if not settings.naver_ready:
@@ -518,6 +649,17 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
             skipped.append("google_search: 실패")
     else:
         skipped.append("google_search: 키 없음")
+    if settings.openai_ready:
+        try:
+            found, note = openai_search_links(keyword, days, settings)
+            if found:
+                groups.append(found)
+            if note:
+                skipped.append(note)
+        except Exception:
+            skipped.append("openai: 실패")
+    else:
+        skipped.append("openai: 키 없음")
     links = [
         {
             "url": item.get("canonical_url") or "",
@@ -527,7 +669,7 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
         }
         for item in mix_topic_links(groups, keyword, days, now)
     ]
-    pages, page_skips = articles_from_pages(links, fetch_article_html, limit=6)
+    pages, page_skips = articles_from_pages(links, fetch_article_html, limit=2 if short else 6)
     articles.extend(pages)
     skipped.extend(page_skips)
     return articles, skipped
@@ -546,14 +688,19 @@ def collect_videos(queries: list[str], days: int, settings: Settings) -> tuple[l
         return videos, skipped
     keyword = queries[0] if queries else ""
     frames = [keyword]
-    for suffix in ("전망", "해설", "상승"):
-        framed = f"{keyword} {suffix}".strip()
-        if framed not in frames:
-            frames.append(framed)
+    if not on_hosted():
+        for suffix in ("전망", "해설", "상승"):
+            framed = f"{keyword} {suffix}".strip()
+            if framed not in frames:
+                frames.append(framed)
+    search_limit = 4 if on_hosted() else 8
     seen = set()
     for query in frames:
         try:
-            found = youtube_ytdlp_search(query, limit=8)
+            found = youtube_ytdlp_search(query, limit=search_limit)
+        except FileNotFoundError:
+            skipped.append("youtube: yt-dlp 없음")
+            break
         except Exception:
             continue
         for video in found:

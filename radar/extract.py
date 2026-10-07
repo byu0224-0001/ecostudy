@@ -1,8 +1,9 @@
 import json
+import os
 import urllib.error
 import urllib.request
 
-from radar.config import Settings
+from radar.config import Settings, on_hosted
 from radar.pipeline import heuristic_claims
 from radar.textutil import STANCE_WORDS, TOPIC_WORDS, compact, keep_grounded, stance_of
 
@@ -24,7 +25,16 @@ def make_extractor(settings: Settings):
     return extract
 
 
+TEXT_MODELS = (
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+)
+_TEXT_MODEL_CHOICE = ""
+
+
 def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
+    global _TEXT_MODEL_CHOICE
     excerpt = (text or "")[:8000]
     if not excerpt.strip():
         return None
@@ -37,17 +47,36 @@ def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
         '{"claims":[{"quote":"","fact":"","interpretation":"","opinion":"","forecast":"","implication":"","evidence":[],"assumptions":[],"stance":"unknown"}]}\n\n'
         f"원문:\n{excerpt}"
     )
-    payload, _note = _generate(settings, {
+    body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
-    })
+    }
+    if _TEXT_MODEL_CHOICE and _TEXT_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:
+        models = [_TEXT_MODEL_CHOICE]
+    else:
+        models = []
+        for model in (settings.gemini_model, *TEXT_MODELS):
+            if model and model not in models and model not in _VIDEO_MODELS_SKIP:
+                models.append(model)
+    payload = None
+    hosted = on_hosted()
+    text_timeout = 15 if hosted else 40
+    for model in models[:2 if hosted else 4]:
+        payload, note = _generate(settings, body, timeout=text_timeout, model=model)
+        if note == "gemini: 잠시 혼잡" and not hosted:
+            payload, note = _generate(settings, body, timeout=text_timeout, model=model)
+        if note == "gemini: 요청 한도":
+            _VIDEO_MODELS_SKIP.add(model)
+            payload = None
+            continue
+        if payload is None:
+            continue
+        _TEXT_MODEL_CHOICE = model
+        break
     if payload is None:
         return None
-    try:
-        parts = payload["candidates"][0]["content"]["parts"]
-        raw = next(part["text"] for part in reversed(parts) if part.get("text"))
-        parsed = json.loads(raw)
-    except Exception:
+    parsed = _json_text(payload)
+    if not isinstance(parsed, dict):
         return None
     claims = []
     for item in (parsed.get("claims") or [])[:3]:
@@ -162,24 +191,28 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         ]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
+    on_vercel = on_hosted()
+    watch_timeout = 20 if on_vercel else 32
     models = []
     if _VIDEO_MODEL_CHOICE and _VIDEO_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:
         models = [_VIDEO_MODEL_CHOICE]
     else:
-        for model in (settings.gemini_model, *VIDEO_WATCH_MODELS):
+        order = ("gemini-3.6-flash", settings.gemini_model, *VIDEO_WATCH_MODELS) if on_vercel else (settings.gemini_model, *VIDEO_WATCH_MODELS)
+        for model in order:
             if model and model not in models and model not in _VIDEO_MODELS_SKIP:
                 models.append(model)
     if not models:
         return None, "gemini: 요청 한도"
     note = "youtube_video: 영상을 열지 못함"
     attempts = 0
+    attempt_cap = 2 if on_vercel else 3
     for model in models:
-        if attempts >= 3:
+        if attempts >= attempt_cap:
             break
-        payload, note = _generate(settings, body, timeout=32, model=model)
+        payload, note = _generate(settings, body, timeout=watch_timeout, model=model)
         attempts += 1
-        if note == "gemini: 잠시 혼잡":
-            payload, note = _generate(settings, body, timeout=32, model=model)
+        if note == "gemini: 잠시 혼잡" and not on_vercel:
+            payload, note = _generate(settings, body, timeout=watch_timeout, model=model)
             attempts += 1
         if note == "gemini: 요청 한도":
             _VIDEO_MODELS_SKIP.add(model)
@@ -340,7 +373,7 @@ def _video_quote_ok(quote: str, keyword: str) -> bool:
     text = (quote or "").strip()
     if len(text) < 18:
         return False
-    if text.startswith("(") and "기자" in text[:48]:
+    if "기자" in text[:48] and text[:1] in "([":
         return False
     if _usable_quote(text):
         return True
@@ -352,9 +385,20 @@ def _video_quote_ok(quote: str, keyword: str) -> bool:
 def _usable_quote(quote: str) -> bool:
     if len(quote) < 24:
         return False
-    if quote.startswith("(") and "기자" in quote[:48]:
+    if "기자" in quote[:48] and quote[:1] in "([":
+        return False
+    if _ticker_print(quote):
         return False
     return any(word.lower() in quote.lower() for word in TOPIC_WORDS + STANCE_WORDS)
+
+
+def _ticker_print(quote: str) -> bool:
+    digits = sum(ch.isdigit() for ch in quote)
+    if digits < 6:
+        return False
+    if any(word in quote for word in ("때문", "우려", "전망", "생각", "가능", "유지", "지속", "압력", "부담", "둔화")):
+        return False
+    return any(word in quote for word in ("마쳤", "마감", "포인트"))
 
 
 def _start_from(quote: str, segments: list[dict] | None) -> int | None:

@@ -1,0 +1,9 @@
+{
+  "name": "Opinion Radar",
+  "short_name": "Radar",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08090a",
+  "theme_color": "#08090a",
+  "lang": "ko"
+}

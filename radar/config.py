@@ -12,11 +12,17 @@ class Settings:
     gemini_model: str
     google_key: str
     google_cx: str
+    openai_key: str
+    openai_model: str
     root: Path
 
     @property
     def naver_ready(self) -> bool:
         return bool(self.naver_id and self.naver_secret)
+
+    @property
+    def openai_ready(self) -> bool:
+        return bool(self.openai_key)
 
     @property
     def youtube_ready(self) -> bool:
@@ -25,6 +31,10 @@ class Settings:
     @property
     def google_ready(self) -> bool:
         return bool(self.google_key and self.google_cx)
+
+
+def on_hosted() -> bool:
+    return any(os.environ.get(name, "").strip() for name in ("VERCEL", "VERCEL_ENV", "RADAR_PASSWORD"))
 
 
 def load_env_file(path: Path) -> None:
@@ -49,6 +59,8 @@ def load_settings(root: Path | None = None) -> Settings:
         gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash",
         google_key=os.environ.get("GOOGLE_CSE_KEY", "").strip(),
         google_cx=os.environ.get("GOOGLE_CSE_CX", "").strip(),
+        openai_key=os.environ.get("OPENAI_API_KEY", "").strip(),
+        openai_model=os.environ.get("OPENAI_MODEL", "gpt-6.1-sol").strip() or "gpt-6.1-sol",
         root=root,
     )
 

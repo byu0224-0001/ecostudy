@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -249,6 +251,19 @@ class ArticleBodyTests(unittest.TestCase):
         links = parse_google_cse(payload)
         self.assertEqual(len(links), 2)
         self.assertEqual(links[0]["canonical_url"], "https://www.ft.com/content/abc")
+
+    def test_openai_citations_keep_article_urls(self):
+        from radar.collect import parse_openai_citations
+
+        payload = {"output": [{"content": [{"type": "output_text", "annotations": [
+            {"type": "url_citation", "url": "https://www.ft.com/content/abc?utm=1", "title": "Treasury yields"},
+            {"type": "url_citation", "url_citation": {"url": "https://youtu.be/aaa", "title": "영상"}},
+            {"type": "url_citation", "url": "http://news.example/plain", "title": "버림"},
+        ]}]}]}
+        links = parse_openai_citations(payload)
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0]["canonical_url"], "https://www.ft.com/content/abc")
+        self.assertEqual(links[0]["title"], "Treasury yields")
         self.assertEqual(links[0]["publisher"], "ft.com")
 
     def test_same_direction_still_splits_the_point(self):
@@ -560,6 +575,12 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertNotIn("제한 시간", " ".join(report["skipped"]))
         self.assertIn("요청 한도로 이후 영상은 보지 않음", " ".join(report["skipped"]))
 
+    def test_closing_print_is_not_an_opinion(self):
+        from radar.extract import _usable_quote
+
+        self.assertFalse(_usable_quote("S&P500지수는 44.98포인트(0.58%) 상승한 7818.93에 장을 마쳤다."))
+        self.assertTrue(_usable_quote("미국 국채 금리 상승은 재정 적자 때문에 오래 갈 수 있다."))
+
     def test_video_quote_accepts_treasury_wording(self):
         from radar.extract import _video_quote_ok
 
@@ -575,6 +596,60 @@ class ArticleBodyTests(unittest.TestCase):
         links = grounding_links(payload)
         self.assertEqual(len(links), 1)
         self.assertEqual(links[0]["url"], "https://news.example/a")
+
+    def test_missing_ytdlp_binary_uses_the_module(self):
+        from radar.collect import ytdlp_prefix
+
+        prefix = ytdlp_prefix(which=lambda _name: None, home=Path("/no/such/home"))
+        self.assertEqual(prefix, [sys.executable, "-m", "yt_dlp"])
+
+    def test_missing_server_report_uses_the_browser_copy(self):
+        from radar.httpapp import dispatch
+
+        status, content_type, body = dispatch("GET", "/r/abc123", b"", root=Path("/workspace"))
+        text = body.decode()
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn("radar-html-abc123", text)
+        self.assertIn("localStorage", text)
+
+    def test_public_search_rejects_a_wrong_password(self):
+        from radar.httpapp import dispatch
+
+        os.environ["RADAR_PASSWORD"] = "test-only-password"
+        try:
+            status, _, body = dispatch(
+                "POST",
+                "/brief",
+                b'{"keyword":"\\uc0c1\\uad00\\uc5c6\\ub294\\ud0a4\\uc6cc\\ub4dc","password":"no"}',
+                root=Path("/workspace"),
+            )
+        finally:
+            os.environ.pop("RADAR_PASSWORD", None)
+        self.assertEqual(status, 401)
+        self.assertIn("암호", body.decode())
+
+    def test_hosted_search_keeps_three_videos_and_articles(self):
+        from radar.httpapp import card_limits
+
+        os.environ["VERCEL"] = "1"
+        try:
+            self.assertEqual(card_limits(), (3, 3))
+        finally:
+            os.environ.pop("VERCEL", None)
+        os.environ["RADAR_PASSWORD"] = "host-only"
+        try:
+            self.assertEqual(card_limits(), (3, 3))
+        finally:
+            os.environ.pop("RADAR_PASSWORD", None)
+        self.assertEqual(card_limits(), (6, 6))
+
+    def test_empty_keyword_does_not_start_a_brief(self):
+        from radar.httpapp import dispatch
+
+        status, _, body = dispatch("POST", "/brief", b'{"keyword":"  "}', root=Path("/workspace"))
+        self.assertEqual(status, 400)
+        self.assertIn("키워드", body.decode())
 
 
 if __name__ == "__main__":

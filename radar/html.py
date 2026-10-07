@@ -219,7 +219,11 @@ def _shell_open(title: str, asset_prefix: str, current: str) -> str:
     return (
         "<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta name="theme-color" content="#08090a">'
+        '<meta name="apple-mobile-web-app-capable" content="yes">'
+        '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
         f"<title>{_esc(title)}</title>"
+        f'<link rel="manifest" href="{_esc(asset_prefix)}manifest.webmanifest">'
         '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">'
         f'<link rel="stylesheet" href="{_esc(asset_prefix)}styles.css"></head><body>'
         '<header class="nav"><div class="wrap nav-inner">'

@@ -1,14 +1,15 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from radar.collect import collect_articles, collect_videos, fetch_caption_segments
-from radar.config import load_settings, missing_key_names
+from radar.config import load_settings, missing_key_names, on_hosted
 from radar.extract import gemini_video_claims, gemini_video_deltas, make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
-from radar.store import connect, save_brief
+from radar.store import connect, default_path, save_brief
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
 
     serve = sub.add_parser("serve", help="검색 화면을 로컬에서 엽니다.")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--root", default=".")
 
     doctor = sub.add_parser("doctor", help="없는 키 이름만 보여 줍니다.")
@@ -43,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "serve":
         from radar.serve import serve as run_server
-        run_server(Path(args.root), args.port)
+        run_server(Path(args.root), args.port, args.host)
         return 0
     settings = load_settings(Path(args.root))
     report = run_brief(
@@ -66,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         html_path.parent.mkdir(parents=True, exist_ok=True)
         html_path.write_text(render_report(report, prefix), encoding="utf-8")
         print(f"html: {html_path}", file=sys.stderr)
-    database = connect(settings.root / "data" / "radar.sqlite")
+    database = connect(default_path(settings.root))
     save_brief(database, report)
     print(f"id: {report['id']}", file=sys.stderr)
     return 0
@@ -85,6 +87,8 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
         skipped.extend(video_skips)
 
     def captions(video_id: str):
+        if on_hosted():
+            return None
         try:
             return fetch_caption_segments(video_id)
         except Exception as exc:

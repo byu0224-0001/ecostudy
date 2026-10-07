@@ -27,6 +27,7 @@
   </section>
   <section class="section section-plain">
     <div class="wrap">
+      <div id="browser-history" class="history-list"></div>
       <div class="history-list">
         <a class="history-card" href="report.html">
           <p class="card-kicker"><time datetime="2026-10-01">10월 1일</time><span>14일 · 영상 4 · 기사 3</span></p>
@@ -46,6 +47,18 @@
       </div>
     </div>
   </section>
+  <script>
+    const box = document.querySelector("#browser-history");
+    let rows = [];
+    try { rows = JSON.parse(localStorage.getItem("radar-history") || "[]"); } catch (_error) { rows = []; }
+    if (box && rows.length) {
+      box.innerHTML = rows.map((row) => {
+        const keyword = String(row.keyword || "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+        const url = String(row.url || "").replace(/"/g, "");
+        return `<a class="history-card" href="${url}"><p class="card-kicker"><span>이 브라우저</span></p><h2>${keyword}</h2><p>이 폰에 저장된 리포트입니다.</p></a>`;
+      }).join("");
+    }
+  </script>
   <footer class="site-footer">
     <div class="wrap">
       <p>서버로 열면 이 목록은 실제로 저장한 리포트로 바뀝니다. 저장된 것이 없으면 빈 기록이 보입니다.</p>

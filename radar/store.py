@@ -1,6 +1,16 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
+
+
+def default_path(root: Path) -> Path:
+    override = os.environ.get("RADAR_DB", "").strip()
+    if override:
+        return Path(override)
+    if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("RADAR_PASSWORD", "").strip():
+        return Path("/tmp/radar.sqlite")
+    return root / "data" / "radar.sqlite"
 
 
 def connect(path: Path) -> sqlite3.Connection:
