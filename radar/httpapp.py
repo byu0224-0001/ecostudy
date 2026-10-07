@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from pathlib import Path
 
 from radar.cli import run_brief
@@ -38,7 +39,13 @@ def dispatch(method: str, path: str, body: bytes, root: Path | None = None) -> t
     if method != "GET":
         return 404, "text/plain; charset=utf-8", b"not found"
     if path == "/health":
-        return 200, "application/json; charset=utf-8", b'{"ok":true}'
+        return _json({
+            "ok": True,
+            "hosted": on_hosted(),
+            "openai": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
+            "naver": bool(os.environ.get("NAVER_CLIENT_ID", "").strip()),
+            "gemini": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+        }, 200)
     if path in ("/", "/index.html"):
         return _file(web / "index.html")
     if path == "/history.html":
@@ -81,6 +88,27 @@ def _brief(body: bytes, root: Path) -> tuple[int, str, bytes]:
     except (TypeError, ValueError):
         days = 14
     days = min(90, max(1, days))
+    if not on_hosted():
+        return _run_brief(keyword, days, root)
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            box["result"] = _run_brief(keyword, days, root)
+        except Exception as exc:
+            box["error"] = str(exc) or "실패"
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(42)
+    if "result" in box:
+        return box["result"]
+    if "error" in box:
+        return _json({"error": box["error"]}, 400)
+    return _json({"error": "공개 주소의 시간 안에 리포트를 끝내지 못했습니다."}, 504)
+
+
+def _run_brief(keyword: str, days: int, root: Path) -> tuple[int, str, bytes]:
     videos, articles = card_limits()
     try:
         report = run_brief(
