@@ -19,7 +19,9 @@ from radar.textutil import strip_html
 USER_AGENT = "OpinionRadar/0.1 (personal research)"
 
 
-def fetch_bytes(url: str, headers: dict | None = None, timeout: int = 20) -> bytes:
+def fetch_bytes(url: str, headers: dict | None = None, timeout: int | None = None) -> bytes:
+    if timeout is None:
+        timeout = 6 if on_hosted() else 20
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read()
@@ -606,7 +608,7 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
     articles: list[dict] = []
     skipped: list[str] = []
     short = on_hosted()
-    for query in (queries[:1] if short else queries):
+    for query in ([] if short else queries):
         try:
             articles.extend(google_news(query, days))
         except Exception:
