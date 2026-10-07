@@ -59,10 +59,12 @@ def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
             if model and model not in models and model not in _VIDEO_MODELS_SKIP:
                 models.append(model)
     payload = None
-    for model in models[:4]:
-        payload, note = _generate(settings, body, model=model)
-        if note == "gemini: 잠시 혼잡":
-            payload, note = _generate(settings, body, model=model)
+    hosted = on_hosted()
+    text_timeout = 8 if hosted else 40
+    for model in models[:2 if hosted else 4]:
+        payload, note = _generate(settings, body, timeout=text_timeout, model=model)
+        if note == "gemini: 잠시 혼잡" and not hosted:
+            payload, note = _generate(settings, body, timeout=text_timeout, model=model)
         if note == "gemini: 요청 한도":
             _VIDEO_MODELS_SKIP.add(model)
             payload = None
@@ -190,7 +192,7 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
     on_vercel = on_hosted()
-    watch_timeout = 18 if on_vercel else 32
+    watch_timeout = 12 if on_vercel else 32
     models = []
     if _VIDEO_MODEL_CHOICE and _VIDEO_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:
         models = [_VIDEO_MODEL_CHOICE]
@@ -203,7 +205,7 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         return None, "gemini: 요청 한도"
     note = "youtube_video: 영상을 열지 못함"
     attempts = 0
-    attempt_cap = 2 if on_vercel else 3
+    attempt_cap = 1 if on_vercel else 3
     for model in models:
         if attempts >= attempt_cap:
             break
