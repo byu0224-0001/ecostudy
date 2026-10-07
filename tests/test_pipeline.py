@@ -251,6 +251,19 @@ class ArticleBodyTests(unittest.TestCase):
         links = parse_google_cse(payload)
         self.assertEqual(len(links), 2)
         self.assertEqual(links[0]["canonical_url"], "https://www.ft.com/content/abc")
+
+    def test_openai_citations_keep_article_urls(self):
+        from radar.collect import parse_openai_citations
+
+        payload = {"output": [{"content": [{"type": "output_text", "annotations": [
+            {"type": "url_citation", "url": "https://www.ft.com/content/abc?utm=1", "title": "Treasury yields"},
+            {"type": "url_citation", "url_citation": {"url": "https://youtu.be/aaa", "title": "영상"}},
+            {"type": "url_citation", "url": "http://news.example/plain", "title": "버림"},
+        ]}]}]}
+        links = parse_openai_citations(payload)
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0]["canonical_url"], "https://www.ft.com/content/abc")
+        self.assertEqual(links[0]["title"], "Treasury yields")
         self.assertEqual(links[0]["publisher"], "ft.com")
 
     def test_same_direction_still_splits_the_point(self):

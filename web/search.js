@@ -72,7 +72,10 @@ if (form) {
       if (password) localStorage.setItem("radar-password", password);
       if (rememberReport(payload, keyword)) window.location.href = payload.url;
     } catch (error) {
-      errorText.textContent = error.message || "연결하지 못했습니다.";
+      const raw = error.message || "";
+      errorText.textContent = raw === "Failed to fetch"
+        ? "공개 주소에 연결하지 못했습니다. 임시 배포는 한 시간이 지나면 사라집니다."
+        : (raw || "연결하지 못했습니다.");
       show("error");
     }
   });

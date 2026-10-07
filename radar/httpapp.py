@@ -20,7 +20,8 @@ WEB_TYPES = {
 
 def card_limits() -> tuple[int, int]:
     if os.environ.get("VERCEL"):
-        return 1, 1
+        articles = 2 if os.environ.get("OPENAI_API_KEY", "").strip() else 1
+        return 1, articles
     return 6, 6
 
 

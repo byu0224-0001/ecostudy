@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -315,6 +316,84 @@ def parse_google_cse(payload: dict) -> list[dict]:
     return articles
 
 
+def parse_openai_citations(payload: dict) -> list[dict]:
+    articles = []
+    seen = set()
+
+    def add(url: str, title: str) -> None:
+        link = (url or "").split("?", 1)[0].strip()
+        if not link.startswith("https://") or link in seen:
+            return
+        host = urllib.parse.urlparse(link).netloc.removeprefix("www.")
+        if any(host == name or host.endswith("." + name) for name in _SKIP_HOSTS):
+            return
+        seen.add(link)
+        cleaned = strip_html(title or "") or host
+        articles.append({
+            "title": cleaned,
+            "publisher": host or "OpenAI",
+            "canonical_url": link,
+            "published_at": "",
+            "section": "column" if any(word in cleaned for word in ("칼럼", "오피니언", "사설", "기고", "column")) else "news",
+            "text": cleaned,
+        })
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "url_citation":
+                inner = node.get("url_citation") if isinstance(node.get("url_citation"), dict) else node
+                add(inner.get("url") or "", inner.get("title") or "")
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+    return articles
+
+
+def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[list[dict], str]:
+    if not settings.openai_ready:
+        return [], "openai: 키 없음"
+    body = {
+        "model": settings.openai_model or "gpt-6.1-sol",
+        "reasoning": {"effort": "low"},
+        "tools": [{
+            "type": "web_search",
+            "external_web_access": True,
+            "search_context_size": "low",
+        }],
+        "input": (
+            f"키워드 '{keyword}'의 최근 {int(days)}일 기사와 칼럼을 찾아라. "
+            "서로 다른 원인을 말하는 글을 둘 이상 고르고, 제목에 그 키워드가 보이게 짧게 답하라."
+        ),
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body).encode(),
+        headers={
+            "Authorization": f"Bearer {settings.openai_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    timeout = 14 if os.environ.get("VERCEL") else 28
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            return [], "openai: 요청 한도"
+        return [], "openai: 응답 실패"
+    except Exception:
+        return [], "openai: 응답 실패"
+    links = parse_openai_citations(payload)
+    if not links:
+        return [], "openai: 기사 링크 없음"
+    return links[:6], ""
+
+
 def google_cse(query: str, days: int, settings: Settings, fetch=fetch_bytes) -> list[dict]:
     korean = any("\uac00" <= char <= "\ud7a3" for char in query)
     params = {
@@ -535,6 +614,17 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
             skipped.append("google_search: 실패")
     else:
         skipped.append("google_search: 키 없음")
+    if settings.openai_ready:
+        try:
+            found, note = openai_search_links(keyword, days, settings)
+            if found:
+                groups.append(found)
+            if note:
+                skipped.append(note)
+        except Exception:
+            skipped.append("openai: 실패")
+    else:
+        skipped.append("openai: 키 없음")
     links = [
         {
             "url": item.get("canonical_url") or "",
