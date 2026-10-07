@@ -2,9 +2,9 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import urllib.error
@@ -379,26 +379,40 @@ def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[li
         },
         method="POST",
     )
-    timeout = 18 if os.environ.get("VERCEL") else 22
-    previous = signal.getsignal(signal.SIGALRM)
+    wait = 16 if os.environ.get("VERCEL") else 22
 
-    def _stop(signum, frame):
-        raise TimeoutError("openai")
+    def _post() -> dict:
+        with urllib.request.urlopen(request, timeout=wait) as response:
+            return json.loads(response.read().decode())
 
-    try:
-        signal.signal(signal.SIGALRM, _stop)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode())
-    except urllib.error.HTTPError as exc:
-        if exc.code == 429:
-            return [], "openai: 요청 한도"
-        return [], "openai: 응답 실패"
-    except Exception:
-        return [], "openai: 응답 실패"
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+    if os.environ.get("VERCEL"):
+        box: dict = {}
+
+        def run() -> None:
+            try:
+                box["payload"] = _post()
+            except urllib.error.HTTPError as exc:
+                box["code"] = exc.code
+            except Exception:
+                box["code"] = 0
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        thread.join(wait)
+        if "payload" not in box:
+            if box.get("code") == 429:
+                return [], "openai: 요청 한도"
+            return [], "openai: 응답 실패"
+        payload = box["payload"]
+    else:
+        try:
+            payload = _post()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                return [], "openai: 요청 한도"
+            return [], "openai: 응답 실패"
+        except Exception:
+            return [], "openai: 응답 실패"
     links = parse_openai_citations(payload)
     if not links:
         return [], "openai: 기사 링크 없음"
