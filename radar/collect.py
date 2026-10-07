@@ -381,7 +381,7 @@ def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[li
         },
         method="POST",
     )
-    wait = 8 if on_hosted() else 22
+    wait = 16 if on_hosted() else 22
 
     def _post() -> dict:
         with urllib.request.urlopen(request, timeout=wait) as response:

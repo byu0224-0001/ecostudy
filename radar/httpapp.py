@@ -100,7 +100,7 @@ def _brief(body: bytes, root: Path) -> tuple[int, str, bytes]:
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    thread.join(52)
+    thread.join(56)
     if "result" in box:
         return box["result"]
     if "error" in box:
