@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -378,8 +379,15 @@ def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[li
         },
         method="POST",
     )
-    timeout = 14 if os.environ.get("VERCEL") else 28
+    timeout = 18 if os.environ.get("VERCEL") else 22
+    previous = signal.getsignal(signal.SIGALRM)
+
+    def _stop(signum, frame):
+        raise TimeoutError("openai")
+
     try:
+        signal.signal(signal.SIGALRM, _stop)
+        signal.setitimer(signal.ITIMER_REAL, timeout)
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
@@ -388,6 +396,9 @@ def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[li
         return [], "openai: 응답 실패"
     except Exception:
         return [], "openai: 응답 실패"
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
     links = parse_openai_citations(payload)
     if not links:
         return [], "openai: 기사 링크 없음"
