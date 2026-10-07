@@ -629,17 +629,17 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertIn("암호", body.decode())
 
-    def test_vercel_keeps_one_video_and_one_article(self):
+    def test_hosted_search_keeps_three_videos_and_articles(self):
         from radar.httpapp import card_limits
 
         os.environ["VERCEL"] = "1"
         try:
-            self.assertEqual(card_limits(), (1, 1))
+            self.assertEqual(card_limits(), (3, 3))
         finally:
             os.environ.pop("VERCEL", None)
         os.environ["RADAR_PASSWORD"] = "host-only"
         try:
-            self.assertEqual(card_limits(), (1, 1))
+            self.assertEqual(card_limits(), (3, 3))
         finally:
             os.environ.pop("RADAR_PASSWORD", None)
         self.assertEqual(card_limits(), (6, 6))

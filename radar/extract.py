@@ -60,7 +60,7 @@ def gemini_claims(text: str, settings: Settings) -> list[dict] | None:
                 models.append(model)
     payload = None
     hosted = on_hosted()
-    text_timeout = 8 if hosted else 40
+    text_timeout = 15 if hosted else 40
     for model in models[:2 if hosted else 4]:
         payload, note = _generate(settings, body, timeout=text_timeout, model=model)
         if note == "gemini: 잠시 혼잡" and not hosted:
@@ -192,7 +192,7 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
     on_vercel = on_hosted()
-    watch_timeout = 12 if on_vercel else 32
+    watch_timeout = 20 if on_vercel else 32
     models = []
     if _VIDEO_MODEL_CHOICE and _VIDEO_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:
         models = [_VIDEO_MODEL_CHOICE]
@@ -205,7 +205,7 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         return None, "gemini: 요청 한도"
     note = "youtube_video: 영상을 열지 못함"
     attempts = 0
-    attempt_cap = 1 if on_vercel else 3
+    attempt_cap = 2 if on_vercel else 3
     for model in models:
         if attempts >= attempt_cap:
             break

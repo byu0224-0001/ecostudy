@@ -21,8 +21,7 @@ WEB_TYPES = {
 
 def card_limits() -> tuple[int, int]:
     if on_hosted():
-        articles = 2 if os.environ.get("OPENAI_API_KEY", "").strip() else 1
-        return 1, articles
+        return 3, 3
     return 6, 6
 
 
@@ -100,7 +99,7 @@ def _brief(body: bytes, root: Path) -> tuple[int, str, bytes]:
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    thread.join(56)
+    thread.join(240)
     if "result" in box:
         return box["result"]
     if "error" in box:
