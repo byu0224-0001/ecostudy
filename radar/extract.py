@@ -387,7 +387,18 @@ def _usable_quote(quote: str) -> bool:
         return False
     if "기자" in quote[:48] and quote[:1] in "([":
         return False
+    if _ticker_print(quote):
+        return False
     return any(word.lower() in quote.lower() for word in TOPIC_WORDS + STANCE_WORDS)
+
+
+def _ticker_print(quote: str) -> bool:
+    digits = sum(ch.isdigit() for ch in quote)
+    if digits < 6:
+        return False
+    if any(word in quote for word in ("때문", "우려", "전망", "생각", "가능", "유지", "지속", "압력", "부담", "둔화")):
+        return False
+    return any(word in quote for word in ("마쳤", "마감", "포인트"))
 
 
 def _start_from(quote: str, segments: list[dict] | None) -> int | None:

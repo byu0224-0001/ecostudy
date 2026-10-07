@@ -366,10 +366,14 @@ def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[li
             "type": "web_search",
             "external_web_access": True,
             "search_context_size": "low",
+            "user_location": {"type": "approximate", "country": "KR", "timezone": "Asia/Seoul"},
         }],
+        "max_output_tokens": 500,
         "input": (
-            f"키워드 '{keyword}'의 최근 {int(days)}일 기사와 칼럼을 찾아라. "
-            "서로 다른 원인을 말하는 글을 둘 이상 고르고, 제목에 그 키워드가 보이게 짧게 답하라."
+            f"키워드 '{keyword}', 최근 {int(days)}일. "
+            "한국 포털 시세 기사 말고 칼럼, 리포트, 영문 해설 중에서 "
+            "재정·물가·연준·수급처럼 원인이 다른 글의 본문 주소만 찾아라. "
+            "시세 마감 숫자만 있는 글은 빼라."
         ),
     }
     request = urllib.request.Request(
@@ -618,7 +622,11 @@ def collect_articles(keyword: str, days: int, settings: Settings, queries: list[
     for query in [keyword, *queries]:
         if query not in frames and any("\uac00" <= char <= "\ud7a3" for char in query):
             frames.append(query)
-    frames = frames[:1] if short else frames[:7]
+    if short:
+        column = f"{keyword} 칼럼".strip()
+        frames = [keyword] if column == keyword else [keyword, column]
+    else:
+        frames = frames[:7]
     groups: list[list[dict]] = []
     now = datetime.now(timezone.utc)
     if not settings.naver_ready:

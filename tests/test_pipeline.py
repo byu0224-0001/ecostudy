@@ -575,6 +575,12 @@ class ArticleBodyTests(unittest.TestCase):
         self.assertNotIn("제한 시간", " ".join(report["skipped"]))
         self.assertIn("요청 한도로 이후 영상은 보지 않음", " ".join(report["skipped"]))
 
+    def test_closing_print_is_not_an_opinion(self):
+        from radar.extract import _usable_quote
+
+        self.assertFalse(_usable_quote("S&P500지수는 44.98포인트(0.58%) 상승한 7818.93에 장을 마쳤다."))
+        self.assertTrue(_usable_quote("미국 국채 금리 상승은 재정 적자 때문에 오래 갈 수 있다."))
+
     def test_video_quote_accepts_treasury_wording(self):
         from radar.extract import _video_quote_ok
 
