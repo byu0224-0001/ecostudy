@@ -8,7 +8,7 @@ def default_path(root: Path) -> Path:
     override = os.environ.get("RADAR_DB", "").strip()
     if override:
         return Path(override)
-    if os.environ.get("VERCEL"):
+    if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("RADAR_PASSWORD", "").strip():
         return Path("/tmp/radar.sqlite")
     return root / "data" / "radar.sqlite"
 

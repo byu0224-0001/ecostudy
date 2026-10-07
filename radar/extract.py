@@ -3,7 +3,7 @@ import os
 import urllib.error
 import urllib.request
 
-from radar.config import Settings
+from radar.config import Settings, on_hosted
 from radar.pipeline import heuristic_claims
 from radar.textutil import STANCE_WORDS, TOPIC_WORDS, compact, keep_grounded, stance_of
 
@@ -189,7 +189,7 @@ def gemini_video_claims(video: dict, settings: Settings, keyword: str = "") -> t
         ]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
-    on_vercel = bool(os.environ.get("VERCEL"))
+    on_vercel = on_hosted()
     watch_timeout = 18 if on_vercel else 32
     models = []
     if _VIDEO_MODEL_CHOICE and _VIDEO_MODEL_CHOICE not in _VIDEO_MODELS_SKIP:

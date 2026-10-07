@@ -33,6 +33,10 @@ class Settings:
         return bool(self.google_key and self.google_cx)
 
 
+def on_hosted() -> bool:
+    return any(os.environ.get(name, "").strip() for name in ("VERCEL", "VERCEL_ENV", "RADAR_PASSWORD"))
+
+
 def load_env_file(path: Path) -> None:
     if not path.is_file():
         return

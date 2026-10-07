@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from radar.collect import collect_articles, collect_videos, fetch_caption_segments
-from radar.config import load_settings, missing_key_names
+from radar.config import load_settings, missing_key_names, on_hosted
 from radar.extract import gemini_video_claims, gemini_video_deltas, make_extractor
 from radar.html import render_report
 from radar.pipeline import build_brief, expand_queries
@@ -87,7 +87,7 @@ def run_brief(keyword: str, *, days: int, max_videos: int, max_articles: int, se
         skipped.extend(video_skips)
 
     def captions(video_id: str):
-        if os.environ.get("VERCEL"):
+        if on_hosted():
             return None
         try:
             return fetch_caption_segments(video_id)

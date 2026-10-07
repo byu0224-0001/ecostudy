@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from radar.cli import run_brief
-from radar.config import load_settings
+from radar.config import load_settings, on_hosted
 from radar.html import render_history, render_report
 from radar.store import connect, default_path, get_brief, list_briefs, save_brief
 
@@ -19,7 +19,7 @@ WEB_TYPES = {
 
 
 def card_limits() -> tuple[int, int]:
-    if os.environ.get("VERCEL"):
+    if on_hosted():
         articles = 2 if os.environ.get("OPENAI_API_KEY", "").strip() else 1
         return 1, articles
     return 6, 6

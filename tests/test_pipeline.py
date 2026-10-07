@@ -631,6 +631,11 @@ class ArticleBodyTests(unittest.TestCase):
             self.assertEqual(card_limits(), (1, 1))
         finally:
             os.environ.pop("VERCEL", None)
+        os.environ["RADAR_PASSWORD"] = "host-only"
+        try:
+            self.assertEqual(card_limits(), (1, 1))
+        finally:
+            os.environ.pop("RADAR_PASSWORD", None)
         self.assertEqual(card_limits(), (6, 6))
 
     def test_empty_keyword_does_not_start_a_brief(self):

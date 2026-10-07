@@ -13,7 +13,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
-from radar.config import Settings
+from radar.config import Settings, on_hosted
 from radar.textutil import strip_html
 
 USER_AGENT = "OpinionRadar/0.1 (personal research)"
@@ -379,13 +379,13 @@ def openai_search_links(keyword: str, days: int, settings: Settings) -> tuple[li
         },
         method="POST",
     )
-    wait = 16 if os.environ.get("VERCEL") else 22
+    wait = 12 if on_hosted() else 22
 
     def _post() -> dict:
         with urllib.request.urlopen(request, timeout=wait) as response:
             return json.loads(response.read().decode())
 
-    if os.environ.get("VERCEL"):
+    if on_hosted():
         box: dict = {}
 
         def run() -> None:
@@ -474,7 +474,7 @@ def youtube_ytdlp_search(query: str, limit: int = 8) -> list[dict]:
         check=True,
         capture_output=True,
         text=True,
-        timeout=18 if os.environ.get("VERCEL") else 40,
+        timeout=12 if on_hosted() else 40,
     )
     return parse_ytdlp(json.loads(completed.stdout))
 
@@ -595,7 +595,7 @@ def articles_from_pages(links: list[dict], fetch_html, limit: int = 4) -> tuple[
 
 def fetch_article_html(url: str) -> tuple[str, str]:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    timeout = 8 if os.environ.get("VERCEL") else 15
+    timeout = 8 if on_hosted() else 15
     with urllib.request.urlopen(request, timeout=timeout) as response:
         final_url = response.geturl()
         raw = response.read(400_000)
@@ -605,7 +605,7 @@ def fetch_article_html(url: str) -> tuple[str, str]:
 def collect_articles(keyword: str, days: int, settings: Settings, queries: list[str]) -> tuple[list[dict], list[str]]:
     articles: list[dict] = []
     skipped: list[str] = []
-    short = bool(os.environ.get("VERCEL"))
+    short = on_hosted()
     for query in (queries[:1] if short else queries):
         try:
             articles.extend(google_news(query, days))
@@ -678,12 +678,12 @@ def collect_videos(queries: list[str], days: int, settings: Settings) -> tuple[l
         return videos, skipped
     keyword = queries[0] if queries else ""
     frames = [keyword]
-    if not os.environ.get("VERCEL"):
+    if not on_hosted():
         for suffix in ("전망", "해설", "상승"):
             framed = f"{keyword} {suffix}".strip()
             if framed not in frames:
                 frames.append(framed)
-    search_limit = 4 if os.environ.get("VERCEL") else 8
+    search_limit = 4 if on_hosted() else 8
     seen = set()
     for query in frames:
         try:
